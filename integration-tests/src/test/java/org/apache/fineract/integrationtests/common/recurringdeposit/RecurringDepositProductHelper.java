@@ -29,6 +29,8 @@ import org.apache.fineract.client.models.GetRecurringDepositProductsProductIdRes
 import org.apache.fineract.client.util.JSON;
 import org.apache.fineract.integrationtests.common.Utils;
 import org.apache.fineract.integrationtests.common.accounting.Account;
+import org.apache.fineract.integrationtests.common.fixeddeposit.FixedDepositProductHelper;
+import org.checkerframework.checker.units.qual.N;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -65,6 +67,7 @@ public class RecurringDepositProductHelper {
     private static final String MONTHLY = "4";
     private static final String QUARTERLY = "5";
     private static final String ANNUALLY = "7";
+    private static final String NONE_COMPOUNDING = "8";
     private static final String INTEREST_CALCULATION_USING_DAILY_BALANCE = "1";
     private static final String INTEREST_CALCULATION_USING_AVERAGE_DAILY_BALANCE = "2";
     private static final String DAYS_360 = "360";
@@ -79,7 +82,7 @@ public class RecurringDepositProductHelper {
     private final String name = Utils.uniqueRandomStringGenerator("RECURRING_DEPOSIT_PRODUCT_", 6);
     private final String shortName = Utils.uniqueRandomStringGenerator("", 4);
     private final String description = Utils.randomStringGenerator("", 20);
-    private final String interestCompoundingPeriodType = MONTHLY;
+    private  String interestCompoundingPeriodType = MONTHLY;
     private final String interestPostingPeriodType = MONTHLY;
     private final String interestCalculationType = INTEREST_CALCULATION_USING_DAILY_BALANCE;
     private String accountingRule = NONE;
@@ -99,7 +102,7 @@ public class RecurringDepositProductHelper {
     private final boolean isMandatoryDeposit = false;
     private final String recurringFrequencyType = MONTHS;
     private final String recurringFrequency = "1";
-    private final String depositAmount = "100000";
+    private  String depositAmount = "100000";
     private final String minDepositAmount = "100";
     private final String maxDepositAmount = "1000000";
     private Account[] accountList = null;
@@ -209,6 +212,11 @@ public class RecurringDepositProductHelper {
         }
         return this;
     }
+    public RecurringDepositProductHelper withInterestCompoundingPeriodTypeAsNone() {
+        this.interestCompoundingPeriodType = NONE_COMPOUNDING ;
+        return this;
+    }
+
 
     // TODO: Rewrite to use fineract-client instead!
     // Example: org.apache.fineract.integrationtests.common.loans.LoanTransactionHelper.disburseLoan(java.lang.Long,
@@ -246,7 +254,7 @@ public class RecurringDepositProductHelper {
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     public static Integer createRecurringDepositProduct(final String recurrungDepositProductCreateJson,
-            final RequestSpecification requestSpec, final ResponseSpecification responseSpec) {
+                                                        final RequestSpecification requestSpec, final ResponseSpecification responseSpec) {
         LOG.info("------------------ CREATING RECURRING DEPOSIT PRODUCT--------------------");
         return Utils.performServerPost(requestSpec, responseSpec, CREATE_RECURRING_DEPOSIT_PRODUCT_URL, recurrungDepositProductCreateJson,
                 "resourceId");
@@ -257,7 +265,7 @@ public class RecurringDepositProductHelper {
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     public static ArrayList retrieveAllRecurringDepositProducts(final RequestSpecification requestSpec,
-            final ResponseSpecification responseSpec) {
+                                                                final ResponseSpecification responseSpec) {
         LOG.info("----------------- RETRIEVING ALL RECURRING DEPOSIT PRODUCTS---------------------------");
         final ArrayList response = Utils.performServerGet(requestSpec, responseSpec,
                 RECURRING_DEPOSIT_PRODUCT_URL + "?" + Utils.TENANT_IDENTIFIER, "");
@@ -269,7 +277,7 @@ public class RecurringDepositProductHelper {
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     public static GetRecurringDepositProductsProductIdResponse getRecurringDepositProductById(final RequestSpecification requestSpec,
-            final ResponseSpecification responseSpec, final Integer productId) {
+                                                                                              final ResponseSpecification responseSpec, final Integer productId) {
         LOG.info("-------------------- RETRIEVING RECURRING DEPOSIT PRODUCT BY ID --------------------------");
         final String GET_RD_PRODUCT_BY_ID_URL = RECURRING_DEPOSIT_PRODUCT_URL + "/" + productId + "?" + Utils.TENANT_IDENTIFIER;
         final String response = Utils.performServerGet(requestSpec, responseSpec, GET_RD_PRODUCT_BY_ID_URL);
@@ -281,7 +289,7 @@ public class RecurringDepositProductHelper {
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     public static HashMap retrieveRecurringDepositProductById(final RequestSpecification requestSpec,
-            final ResponseSpecification responseSpec, final String productId) {
+                                                              final ResponseSpecification responseSpec, final String productId) {
         LOG.info("-------------------- RETRIEVING RECURRING DEPOSIT PRODUCT BY ID --------------------------");
         final String GET_RD_PRODUCT_BY_ID_URL = RECURRING_DEPOSIT_PRODUCT_URL + "/" + productId + "?" + Utils.TENANT_IDENTIFIER;
         final HashMap response = Utils.performServerGet(requestSpec, responseSpec, GET_RD_PRODUCT_BY_ID_URL, "");
@@ -293,7 +301,7 @@ public class RecurringDepositProductHelper {
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     public static ArrayList getInterestRateChartSlabsByProductId(final RequestSpecification requestSpec,
-            final ResponseSpecification responseSpec, final Integer productId) {
+                                                                 final ResponseSpecification responseSpec, final Integer productId) {
         LOG.info("-------------------- RETRIEVE INTEREST CHART BY PRODUCT ID ---------------------");
         final ArrayList response = Utils.performServerGet(requestSpec, responseSpec, INTEREST_CHART_URL + "?productId=" + productId,
                 "chartSlabs");

@@ -183,7 +183,7 @@ public class AccrualBasedAccountingProcessorForSavings implements AccountingProc
             else if (savingsTransactionDTO.getTransactionType().isAccrual()) {
                 // Post journal entry for Accrual Recognition
                 if (savingsTransactionDTO.getAmount().compareTo(BigDecimal.ZERO) > 0) {
-                    if (MathUtil.isGreaterThanZero(overdraftAmount)) {
+                    if (MathUtil.isGreaterThanZero(overdraftAmount) || MathUtil.isGreaterThanZero(amount)) {
                         this.helper.createAccrualBasedDebitJournalEntriesAndReversalsForSavings(office, currencyCode,
                                 AccrualAccountsForSavings.INTEREST_ON_SAVINGS.getValue(), savingsProductId, paymentTypeId, savingsId,
                                 transactionId, transactionDate, amount, isReversal);

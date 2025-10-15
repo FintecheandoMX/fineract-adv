@@ -53,6 +53,7 @@ public class SavingsProductHelper {
     private static final String MONTHLY = "4";
     private static final String QUARTERLY = "5";
     private static final String ANNUAL = "7";
+    private static final String None = "8";
     private static final String INTEREST_CALCULATION_USING_DAILY_BALANCE = "1";
     private static final String INTEREST_CALCULATION_USING_AVERAGE_DAILY_BALANCE = "2";
     private static final String DAYS_360 = "360";
@@ -61,6 +62,7 @@ public class SavingsProductHelper {
     private static final String CASH_BASED = "2";
     private static final String ACCRUAL_PERIODIC = "3";
 
+    private String digitsAfterDecimal = "4";
     private String nameOfSavingsProduct = Utils.uniqueRandomStringGenerator("SAVINGS_PRODUCT_", 6);
     private String shortName = Utils.uniqueRandomStringGenerator("", 4);
     private String description = Utils.randomStringGenerator("", 20);
@@ -83,7 +85,7 @@ public class SavingsProductHelper {
     private String withdrawalFeeForTransfers = "true";
     private String lockingPeriodFrequencyType = DAYS;
     private String currencyCode = USD;
-    private final String interestCalculationDaysInYearType = DAYS_365;
+    private String interestCalculationDaysInYearType = DAYS_365;
     private Account[] accountList = null;
     private String minBalanceForInterestCalculation = null;
     private String allowOverdraft = "false";
@@ -117,7 +119,7 @@ public class SavingsProductHelper {
         map.put("currencyCode", this.currencyCode);
         map.put("interestCalculationDaysInYearType", this.interestCalculationDaysInYearType);
         map.put("locale", LOCALE);
-        map.put("digitsAfterDecimal", DIGITS_AFTER_DECIMAL);
+        map.put("digitsAfterDecimal", this.digitsAfterDecimal);
         map.put("inMultiplesOf", IN_MULTIPLES_OF);
         map.put("interestCalculationType", this.interestCalculationType);
         map.put("nominalAnnualInterestRate", this.nominalAnnualInterestRate);
@@ -209,6 +211,11 @@ public class SavingsProductHelper {
 
     public SavingsProductHelper withInterestPostingPeriodTypeAsMonthly() {
         this.interestPostingPeriodType = MONTHLY;
+        return this;
+    }
+
+    public SavingsProductHelper withInterestCompoundingPeriodTypeAsNone() {
+        this.interestCompoundingPeriodType = None;
         return this;
     }
 
@@ -358,6 +365,11 @@ public class SavingsProductHelper {
         return this;
     }
 
+    public SavingsProductHelper withDigitsAfterDecimal(final String digits){
+        this.digitsAfterDecimal = digits;
+        return this;
+    }
+
     public BigDecimal getNominalAnnualInterestRate() {
         return new BigDecimal(nominalAnnualInterestRate);
     }
@@ -371,7 +383,17 @@ public class SavingsProductHelper {
     }
 
     public Integer getDecimalCurrency() {
-        return Integer.parseInt(DIGITS_AFTER_DECIMAL);
+        return Integer.parseInt(digitsAfterDecimal);
+    }
+
+    public SavingsProductHelper withInterestCalculationDaysInYearType_360() {
+        this.interestCalculationDaysInYearType = DAYS_360;
+        return this;
+    }
+
+    public SavingsProductHelper withInterestPostingPeriodTypeAsNONE() {
+        this.interestPostingPeriodType = None;
+        return this;
     }
 
     // TODO: Rewrite to use fineract-client instead!

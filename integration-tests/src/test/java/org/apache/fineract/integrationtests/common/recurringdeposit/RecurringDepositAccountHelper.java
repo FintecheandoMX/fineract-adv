@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.HashMap;
 import java.util.Locale;
+import java.util.List;
 import org.apache.fineract.integrationtests.common.CommonConstants;
 import org.apache.fineract.integrationtests.common.Utils;
 import org.slf4j.Logger;
@@ -160,7 +161,7 @@ public class RecurringDepositAccountHelper {
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     public static Integer applyRecurringDepositApplication(final String recurringDepositAccountAsJson,
-            final RequestSpecification requestSpec, final ResponseSpecification responseSpec) {
+                                                           final RequestSpecification requestSpec, final ResponseSpecification responseSpec) {
         LOG.info("--------------------- APPLYING FOR RECURRING DEPOSIT ACCOUNT ------------------------");
         return Utils.performServerPost(requestSpec, responseSpec, APPLY_RECURRING_DEPOSIT_ACCOUNT_URL, recurringDepositAccountAsJson,
                 CommonConstants.RESPONSE_RESOURCE_ID);
@@ -171,12 +172,19 @@ public class RecurringDepositAccountHelper {
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     public static HashMap getRecurringDepositAccountById(final RequestSpecification requestSpec, final ResponseSpecification responseSpec,
-            final Integer accountID) {
+                                                         final Integer accountID) {
         final String GET_RECURRING_DEPOSIT_BY_ID_URL = RECURRING_DEPOSIT_ACCOUNT_URL + "/" + accountID + "?" + Utils.TENANT_IDENTIFIER;
         LOG.info("------------------------ RETRIEVING RECURRING DEPOSIT ACCOUNT BY ID -------------------------");
         return Utils.performServerGet(requestSpec, responseSpec, GET_RECURRING_DEPOSIT_BY_ID_URL, "");
     }
+    public static List<HashMap> getRecurringDepositTransactions(final RequestSpecification requestSpec, final ResponseSpecification responseSpec,
+                                                                final Integer accountID) {
+        LOG.info("---------------- RETRIEVING RECURRING DEPOSIT TRANSACTION ID {} -----------------", accountID);
 
+        final String GET_RECURRING_DEPOSIT_BY_ID_URL = RECURRING_DEPOSIT_ACCOUNT_URL + "/" + accountID + "?associations=transactions&" + Utils.TENANT_IDENTIFIER;
+        final HashMap response = Utils.performServerGet(requestSpec, responseSpec, GET_RECURRING_DEPOSIT_BY_ID_URL, "");
+        return (List<HashMap>) response.get("transactions");
+    }
     // TODO: Rewrite to use fineract-client instead!
     // Example: org.apache.fineract.integrationtests.common.loans.LoanTransactionHelper.disburseLoan(java.lang.Long,
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
@@ -207,7 +215,7 @@ public class RecurringDepositAccountHelper {
     }
 
     public static Float getPrincipalAfterCompoundingInterest(Calendar currentDate, Float principal, Float depositAmount,
-            Integer depositPeriod, double interestPerDay, Integer compoundingInterval, Integer postingInterval) {
+                                                             Integer depositPeriod, double interestPerDay, Integer compoundingInterval, Integer postingInterval) {
 
         Float totalInterest = 0.0f;
         Float interestEarned = 0.0f;
@@ -243,7 +251,7 @@ public class RecurringDepositAccountHelper {
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     public HashMap updateRecurringDepositAccount(final String clientID, final String productID, final String accountID,
-            final String validFrom, final String validTo, final String penalInterestType, final String submittedOnDate) {
+                                                 final String validFrom, final String validTo, final String penalInterestType, final String submittedOnDate) {
 
         DateFormat dateFormat = new SimpleDateFormat("dd MMMM yyyy", Locale.US);
         Calendar todaysDate = Calendar.getInstance();
@@ -265,9 +273,9 @@ public class RecurringDepositAccountHelper {
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     public HashMap updateInterestCalculationConfigForRecurringDeposit(final String clientID, final String productID, final String accountID,
-            final String submittedOnDate, final String validFrom, final String validTo, final String numberOfDaysPerYear,
-            final String penalInterestType, final String interestCalculationType, final String interestCompoundingPeriodType,
-            final String interestPostingPeriodType, final String expectedFirstDepositOnDate) {
+                                                                      final String submittedOnDate, final String validFrom, final String validTo, final String numberOfDaysPerYear,
+                                                                      final String penalInterestType, final String interestCalculationType, final String interestCompoundingPeriodType,
+                                                                      final String interestPostingPeriodType, final String expectedFirstDepositOnDate) {
 
         final String recurringDepositApplicationJSON = new RecurringDepositAccountHelper(this.requestSpec, this.responseSpec) //
                 .withSubmittedOnDate(submittedOnDate) //
@@ -288,7 +296,7 @@ public class RecurringDepositAccountHelper {
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     public Integer updateTransactionForRecurringDeposit(final Integer accountID, final Integer transactionId, final String transactionDate,
-            final Float transactionAmount) {
+                                                        final Float transactionAmount) {
         LOG.info("--------------------------------- UPDATE RECURRING DEPOSIT TRANSACTION ------------------------------------");
         return Utils.performServerPost(this.requestSpec, this.responseSpec,
                 RECURRING_DEPOSIT_ACCOUNT_URL + "/" + accountID + "/transactions/" + transactionId + "?command="
@@ -301,7 +309,7 @@ public class RecurringDepositAccountHelper {
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     public Integer undoTransactionForRecurringDeposit(final Integer accountID, final Integer transactionId, final String transactionDate,
-            final Float transactionAmount) {
+                                                      final Float transactionAmount) {
         LOG.info("--------------------------------- UNDO RECURRING DEPOSIT TRANSACTION ------------------------------------");
         return Utils.performServerPost(this.requestSpec, this.responseSpec,
                 RECURRING_DEPOSIT_ACCOUNT_URL + "/" + accountID + "/transactions/" + transactionId + "?command=" + UNDO_TRANSACTION_COMMAND,
@@ -401,7 +409,7 @@ public class RecurringDepositAccountHelper {
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     public Integer depositToRecurringDepositAccount(final Integer recurringDepositAccountId, final Float depositAmount,
-            final String depositedOnDate) {
+                                                    final String depositedOnDate) {
         LOG.info("--------------------------------- DEPOSIT TO RECURRING DEPOSIT ACCOUNT --------------------------------");
         return (Integer) performRecurringDepositActions(
                 createDepositToRecurringDepositURL(DEPOSIT_INTO_RECURRING_DEPOSIT_COMMAND, recurringDepositAccountId),
@@ -424,7 +432,7 @@ public class RecurringDepositAccountHelper {
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     public Object prematureCloseForRecurringDeposit(final Integer recurringDepositAccountId, final String closedOnDate,
-            final String closureType, final Integer toSavingsId, final String jsonAttributeToGetBack) {
+                                                    final String closureType, final Integer toSavingsId, final String jsonAttributeToGetBack) {
         LOG.info("--------------------- PREMATURE CLOSE FOR RECURRING DEPOSIT ----------------------------");
         return performRecurringDepositActions(
                 createRecurringDepositCalculateInterestURL(PREMATURE_CLOSE_COMMAND, recurringDepositAccountId),
@@ -550,7 +558,7 @@ public class RecurringDepositAccountHelper {
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     private String getPrematureCloseForRecurringDepositAccountAsJSON(final String closedOnDate, final String closureType,
-            final Integer toSavingsId) {
+                                                                     final Integer toSavingsId) {
         final HashMap<String, Object> map = new HashMap<>();
         map.put("locale", CommonConstants.LOCALE);
         map.put("dateFormat", CommonConstants.DATE_FORMAT);
@@ -578,7 +586,7 @@ public class RecurringDepositAccountHelper {
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     private Object performRecurringDepositActions(final String postURLForRecurringDeposit, final String jsonToBeSent,
-            final String jsonAttributeToGetBack) {
+                                                  final String jsonAttributeToGetBack) {
         return Utils.performServerPost(this.requestSpec, this.responseSpec, postURLForRecurringDeposit, jsonToBeSent,
                 jsonAttributeToGetBack);
     }

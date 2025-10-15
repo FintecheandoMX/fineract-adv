@@ -64,6 +64,7 @@ public class FixedDepositProductHelper {
     private static final String QUARTERLY = "5";
     private static final String BI_ANNUALLY = "6";
     private static final String ANNUALLY = "7";
+    private static final String None = "8";
     private static final String INTEREST_CALCULATION_USING_DAILY_BALANCE = "1";
     private static final String INTEREST_CALCULATION_USING_AVERAGE_DAILY_BALANCE = "2";
     private static final String DAYS_360 = "360";
@@ -93,14 +94,24 @@ public class FixedDepositProductHelper {
     private String inMultiplesOfDepositTermTypeId = MONTHS;
     private String preClosurePenalInterest = "2";
     private String preClosurePenalInterestOnTypeId = WHOLE_TERM;
-    private final boolean preClosurePenalApplicable = true;
+    private boolean preClosurePenalApplicable = true;
     private final String currencyCode = USD;
-    private final String interestCalculationDaysInYearType = DAYS_365;
+    private String interestCalculationDaysInYearType = DAYS_365;
     private Account[] accountList = null;
     private List<HashMap<String, String>> chartSlabs = null;
     private boolean isPrimaryGroupingByAmount = false;
     private Boolean withHoldTax = false;
     private String taxGroupId = null;
+    private String interestPayableAccountId;
+    private String feesReceivableAccountId = null;
+    private String penaltiesReceivableAccountId = null;
+    private String interestOnSavingsAccountId = null;
+    private String savingsControlAccountId = null;
+    private String nominalAnnualInterestRateOverdraft = null;
+    private String digitsAfterDecimal = "4";
+    private String inMultiplesOf = null;
+    private String minDepositAmount = "1";
+    private String maxDepositAmount = "1000000";
 
     // TODO: Rewrite to use fineract-client instead!
     // Example: org.apache.fineract.integrationtests.common.loans.LoanTransactionHelper.disburseLoan(java.lang.Long,
@@ -136,8 +147,8 @@ public class FixedDepositProductHelper {
         map.put("currencyCode", this.currencyCode);
         map.put("interestCalculationDaysInYearType", this.interestCalculationDaysInYearType);
         map.put("locale", LOCALE);
-        map.put("digitsAfterDecimal", DIGITS_AFTER_DECIMAL);
-        map.put("inMultiplesOf", IN_MULTIPLES_OF);
+        map.put("digitsAfterDecimal", this.digitsAfterDecimal);
+        map.put("inMultiplesOf", this.inMultiplesOf);
         map.put("interestCalculationType", this.interestCalculationType);
         map.put("interestCompoundingPeriodType", this.interestCompoundingPeriodType);
         map.put("interestPostingPeriodType", this.interestPostingPeriodType);
@@ -156,6 +167,8 @@ public class FixedDepositProductHelper {
         map.put("preClosurePenalInterest", this.preClosurePenalInterest);
         map.put("preClosurePenalInterestOnTypeId", this.preClosurePenalInterestOnTypeId);
         map.put("withHoldTax", this.withHoldTax.toString());
+        map.put("minDepositAmount", this.minDepositAmount);
+        map.put("maxDepositAmount", this.maxDepositAmount);
         if (withHoldTax) {
             map.put("taxGroupId", taxGroupId);
         }
@@ -165,6 +178,12 @@ public class FixedDepositProductHelper {
         }
         if (this.accountingRule.equals(ACCRUAL_PERIODIC)) {
             map.putAll(getAccountMappingForAccrualBased());
+        }
+        if(this.inMultiplesOf == null){
+            map.put("inMultiplesOf", IN_MULTIPLES_OF);
+        }
+        if(this.digitsAfterDecimal.equals("")){
+            map.put("digitsAfterDecimal", DIGITS_AFTER_DECIMAL);
         }
 
         String FixedDepositProductCreateJson = new Gson().toJson(map);
@@ -405,6 +424,83 @@ public class FixedDepositProductHelper {
         this.accountList = account_list;
         return this;
     }
+    public FixedDepositProductHelper withInterestCompoundingPeriodTypeAsNone() {
+        this.interestCompoundingPeriodType = None;
+        return this;
+    }
+    public FixedDepositProductHelper withInterestPostingPeriodTypeAsMonthly() {
+        this.interestPostingPeriodType = MONTHLY;
+        return this;
+    }
+    public FixedDepositProductHelper withInterestCalculationPeriodTypeAsDailyBalance() {
+        this.interestCalculationType = INTEREST_CALCULATION_USING_DAILY_BALANCE;
+        return this;
+    }
+    public FixedDepositProductHelper withInMultiplesOf(final String inMultiplesOf) {
+        this.inMultiplesOf = inMultiplesOf;
+        return this;
+    }
+    public FixedDepositProductHelper withDigitsAfterDecimal(final String digitsAfterDecimal) {
+        this.digitsAfterDecimal = digitsAfterDecimal;
+        return this;
+    }
+    public FixedDepositProductHelper withMinDepositAmount(final String minDepositAmount) {
+        this.minDepositAmount = minDepositAmount;
+        return this;
+    }
+
+    public FixedDepositProductHelper withMaxDepositAmount(final String maxDepositAmount) {
+        this.maxDepositAmount = maxDepositAmount;
+        return this;
+    }
+    public FixedDepositProductHelper withLockinPeriodFrequency(final String lockinPeriodFrequency) {
+        this.lockinPeriodFrequency = lockinPeriodFrequency;
+        return this;
+    }
+
+    public FixedDepositProductHelper withLockingPeriodFrequencyType(final String lockingPeriodFrequencyType) {
+        this.lockingPeriodFrequencyType = lockingPeriodFrequencyType;
+        return this;
+    }
+
+    public FixedDepositProductHelper withMaxDepositTerm(final String maxDepositTerm) {
+        this.maxDepositTerm = maxDepositTerm;
+        return this;
+    }
+    public FixedDepositProductHelper maxDepositTermTypeDays() {
+        this.maxDepositTermTypeId = DAYS;
+        return this;
+    }
+
+    public FixedDepositProductHelper withOutInMultiplesOfDepositTerm() {
+        this.inMultiplesOfDepositTerm = null;
+        return this;
+    }
+    public FixedDepositProductHelper withOutInMultiplesOfDepositTermType() {
+        this.inMultiplesOfDepositTermTypeId = null;
+        return this;
+    }
+    public FixedDepositProductHelper with_minDepositTermTypeIdAsYears() {
+        this.minDepositTermTypeId = YEARS;
+        return this;
+    }
+
+    public FixedDepositProductHelper withInterestCalculationDaysInYearType_360() {
+        this.interestCalculationDaysInYearType = DAYS_360;
+        return this;
+    }
+    public FixedDepositProductHelper withMinDepositTerm(final String minDepositTerm){
+        this.minDepositTerm = minDepositTerm;
+        return this;
+    }
+    public FixedDepositProductHelper minDepositTermTypeDays() {
+        this.minDepositTermTypeId = DAYS;
+        return this;
+    }
+    public FixedDepositProductHelper withPreClosurePenalApplicable(final boolean preClosurePenalApplicable) {
+        this.preClosurePenalApplicable = preClosurePenalApplicable;
+        return this;
+    }
 
     public FixedDepositProductHelper withPeriodRangeChart() {
         this.chartSlabs = constructChartSlabWithPeriodRange();
@@ -425,12 +521,39 @@ public class FixedDepositProductHelper {
         this.chartSlabs = constructChartSlabWithAmountAndPeriodRange();
         return this;
     }
+    public FixedDepositProductHelper withPeriodFixed(){
+        this.chartSlabs = withRegularFixedDepositChart();
+        return this;
+    }
 
     public FixedDepositProductHelper withWithHoldTax(final String taxGroupId) {
         if (taxGroupId != null) {
             this.withHoldTax = true;
             this.taxGroupId = taxGroupId;
         }
+        return this;
+    }
+    public FixedDepositProductHelper withInterestPayableAccountId(final String interestPayableAccountId) {
+        this.interestPayableAccountId = interestPayableAccountId;
+        return this;
+    }
+    public FixedDepositProductHelper withSavingsReferenceAccountId(final String feesReceivableAccountId) {
+        this.feesReceivableAccountId = feesReceivableAccountId;
+        return this;
+    }
+
+    public FixedDepositProductHelper withFixedpenaltiesReceivableAccountId(final String penaltiesReceivableAccountId) {
+        this.penaltiesReceivableAccountId = penaltiesReceivableAccountId;
+        return this;
+    }
+
+    public FixedDepositProductHelper withInterestOnSavingsAccountId(final String interestOnSavingsAccountId) {
+        this.interestOnSavingsAccountId = interestOnSavingsAccountId;
+        return this;
+    }
+
+    public FixedDepositProductHelper withSavingsControlAccountId(final String savingsControlAccountId) {
+        this.savingsControlAccountId = savingsControlAccountId;
         return this;
     }
 
@@ -499,13 +622,62 @@ public class FixedDepositProductHelper {
         }
         return map;
     }
+    public  List<HashMap<String, String>>  withRegularFixedDepositChart() {
+        this.isPrimaryGroupingByAmount = false;
+        List<HashMap<String, String>> chartSlabs = new ArrayList<>();
+
+        HashMap<String, String> slab1 = new HashMap<>();
+        slab1.put("description", "1 to 360");
+        slab1.put("periodType", DAYS);
+        slab1.put("fromPeriod", "0");
+        slab1.put("toPeriod", "360");
+        slab1.put("amountRangeFrom", "1");
+        slab1.put("amountRangeTo", "10000000");
+        slab1.put("annualInterestRate", "15");
+        slab1.put("locale", LOCALE);
+        chartSlabs.add(slab1);
+
+        // Slab 2: 0-360 Días, 10,000,001+
+        HashMap<String, String> slab2 = new HashMap<>();
+        slab2.put("description", "Above1");
+        slab2.put("periodType", DAYS);
+        slab2.put("fromPeriod", "0");
+        slab2.put("toPeriod", "360");
+        slab2.put("amountRangeFrom", "10000001");
+        slab2.put("annualInterestRate", "15");
+        slab2.put("locale", LOCALE);
+        chartSlabs.add(slab2);
+
+        // Slab 3: 361+ Días, 1 - 10,000,000
+        HashMap<String, String> slab3 = new HashMap<>();
+        slab3.put("description", "Above 360 days");
+        slab3.put("periodType", DAYS);
+        slab3.put("fromPeriod", "361");
+        slab3.put("amountRangeFrom", "1");
+        slab3.put("amountRangeTo", "10000000");
+        slab3.put("annualInterestRate", "15");
+        slab3.put("locale", LOCALE);
+        chartSlabs.add(slab3);
+
+        // Slab 4: 361+ Días, 10,000,001+
+        HashMap<String, String> slab4 = new HashMap<>();
+        slab4.put("description", "Above2");
+        slab4.put("periodType", DAYS);
+        slab4.put("fromPeriod", "361");
+        slab4.put("amountRangeFrom", "10000001");
+        slab4.put("annualInterestRate", "15");
+        slab4.put("locale", LOCALE);
+        chartSlabs.add(slab4);
+
+        return chartSlabs;
+    }
 
     // TODO: Rewrite to use fineract-client instead!
     // Example: org.apache.fineract.integrationtests.common.loans.LoanTransactionHelper.disburseLoan(java.lang.Long,
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     public static Integer createFixedDepositProduct(final String fixedDepositProductCreateJson, final RequestSpecification requestSpec,
-            final ResponseSpecification responseSpec) {
+                                                    final ResponseSpecification responseSpec) {
         LOG.info("--------------------- CREATING FIXED DEPOSIT PRODUCT ------------------------");
         return Utils.performServerPost(requestSpec, responseSpec, CREATE_FIXED_DEPOSIT_PRODUCT_URL, fixedDepositProductCreateJson,
                 CommonConstants.RESPONSE_RESOURCE_ID);
@@ -516,7 +688,7 @@ public class FixedDepositProductHelper {
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     public static ArrayList retrieveAllFixedDepositProducts(final RequestSpecification requestSpec,
-            final ResponseSpecification responseSpec) {
+                                                            final ResponseSpecification responseSpec) {
         LOG.info("-------------------- RETRIEVING ALL FIXED DEPOSIT PRODUCTS ---------------------");
         final ArrayList response = Utils.performServerGet(requestSpec, responseSpec,
                 FIXED_DEPOSIT_PRODUCT_URL + "?" + Utils.TENANT_IDENTIFIER, "");
@@ -528,7 +700,7 @@ public class FixedDepositProductHelper {
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     public static HashMap retrieveFixedDepositProductById(final RequestSpecification requestSpec, final ResponseSpecification responseSpec,
-            final String productId) {
+                                                          final String productId) {
         LOG.info("------------------------ RETRIEVING FIXED DEPOSIT PRODUCT BY ID ------------------------");
         final String GET_FD_PRODUCT_BY_ID_URL = FIXED_DEPOSIT_PRODUCT_URL + "/" + productId + "?" + Utils.TENANT_IDENTIFIER;
         final HashMap response = Utils.performServerGet(requestSpec, responseSpec, GET_FD_PRODUCT_BY_ID_URL, "");
@@ -540,7 +712,7 @@ public class FixedDepositProductHelper {
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     public static ArrayList getInterestRateChartSlabsByProductId(final RequestSpecification requestSpec,
-            final ResponseSpecification responseSpec, final Integer productId) {
+                                                                 final ResponseSpecification responseSpec, final Integer productId) {
         LOG.info("-------------------- RETRIEVE INTEREST CHART BY PRODUCT ID ---------------------");
         final ArrayList response = Utils.performServerGet(requestSpec, responseSpec, INTEREST_CHART_URL + "?productId=" + productId,
                 "chartSlabs");

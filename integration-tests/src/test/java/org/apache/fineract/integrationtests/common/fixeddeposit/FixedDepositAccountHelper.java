@@ -72,6 +72,7 @@ public class FixedDepositAccountHelper {
     private static final String QUARTERLY = "5";
     private static final String BI_ANNUALLY = "6";
     private static final String ANNUALLY = "7";
+    private static final String None = "8";
     private static final String INTEREST_CALCULATION_USING_DAILY_BALANCE = "1";
     private static final String INTEREST_CALCULATION_USING_AVERAGE_DAILY_BALANCE = "2";
     private static final String DAYS_360 = "360";
@@ -84,15 +85,15 @@ public class FixedDepositAccountHelper {
     private String interestCalculationType = INTEREST_CALCULATION_USING_DAILY_BALANCE;
     private String lockinPeriodFrequency = "1";
     private String lockingPeriodFrequencyType = MONTHS;
-    private final String minDepositTerm = "6";
-    private final String minDepositTermTypeId = MONTHS;
-    private final String maxDepositTerm = "10";
-    private final String maxDepositTermTypeId = YEARS;
-    private final String inMultiplesOfDepositTerm = "2";
-    private final String inMultiplesOfDepositTermTypeId = MONTHS;
+    private String minDepositTerm = "6";
+    private String minDepositTermTypeId = MONTHS;
+    private String maxDepositTerm = "10";
+    private String maxDepositTermTypeId = YEARS;
+    private String inMultiplesOfDepositTerm = "2";
+    private String inMultiplesOfDepositTermTypeId = MONTHS;
     private final String preClosurePenalInterest = "2";
     private String interestCalculationDaysInYearType = DAYS_365;
-    private final boolean preClosurePenalApplicable = true;
+    private boolean preClosurePenalApplicable = true;
     private final boolean isActiveChart = true;
     private final String currencyCode = USD;
 
@@ -146,12 +147,45 @@ public class FixedDepositAccountHelper {
         return fixedDepositAccountJson;
     }
 
+    public FixedDepositAccountHelper maxDepositTermTypeDays() {
+        this.maxDepositTermTypeId = DAYS;
+        return this;
+    }
+    public FixedDepositAccountHelper withMaxDepositTerm(final String maxDepositTerm) {
+        this.maxDepositTerm = maxDepositTerm;
+        return this;
+    }
+    public FixedDepositAccountHelper minDepositTermTypeDays() {
+        this.minDepositTermTypeId = DAYS;
+        return this;
+    }
+    public FixedDepositAccountHelper withMinDepositTerm(final String minDepositTerm){
+        this.minDepositTerm = minDepositTerm;
+        return this;
+    }
+    public FixedDepositAccountHelper withInterestCompoundingPeriodTypeAsNone() {
+        this.interestCompoundingPeriodType = None;
+        return this;
+    }
+    public FixedDepositAccountHelper withPreClosurePenalApplicable(final boolean preClosurePenalApplicable) {
+        this.preClosurePenalApplicable = preClosurePenalApplicable;
+        return this;
+    }
+    public FixedDepositAccountHelper withOutInMultiplesOfDepositTerm() {
+        this.inMultiplesOfDepositTerm = null;
+        return this;
+    }
+    public FixedDepositAccountHelper withOutInMultiplesOfDepositTermType() {
+        this.inMultiplesOfDepositTermTypeId = null;
+        return this;
+    }
+
     // TODO: Rewrite to use fineract-client instead!
     // Example: org.apache.fineract.integrationtests.common.loans.LoanTransactionHelper.disburseLoan(java.lang.Long,
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     public static Integer applyFixedDepositApplicationGetId(final String fixedDepositAccountAsJson, final RequestSpecification requestSpec,
-            final ResponseSpecification responseSpec) {
+                                                            final ResponseSpecification responseSpec) {
         LOG.info("--------------------- APPLYING FOR FIXED DEPOSIT ACCOUNT ------------------------");
         return Utils.performServerPost(requestSpec, responseSpec, APPLY_FIXED_DEPOSIT_ACCOUNT_URL, fixedDepositAccountAsJson,
                 CommonConstants.RESPONSE_RESOURCE_ID);
@@ -162,7 +196,7 @@ public class FixedDepositAccountHelper {
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     public static String applyFixedDepositApplication(final String fixedDepositAccountAsJson, final RequestSpecification requestSpec,
-            final ResponseSpecification responseSpec) {
+                                                      final ResponseSpecification responseSpec) {
         LOG.info("--------------------- APPLYING FOR FIXED DEPOSIT ACCOUNT ------------------------");
         return Utils.performServerPost(requestSpec, responseSpec, APPLY_FIXED_DEPOSIT_ACCOUNT_URL, fixedDepositAccountAsJson);
     }
@@ -172,7 +206,7 @@ public class FixedDepositAccountHelper {
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     public static HashMap getFixedDepositAccountById(final RequestSpecification requestSpec, final ResponseSpecification responseSpec,
-            final Integer accountID) {
+                                                     final Integer accountID) {
         final String GET_FIXED_DEPOSIT_BY_ID_URL = FIXED_DEPOSIT_ACCOUNT_URL + "/" + accountID + "?" + Utils.TENANT_IDENTIFIER;
         LOG.info("------------------------ RETRIEVING FIXED DEPOSIT ACCOUNT BY ID -------------------------");
         return Utils.performServerGet(requestSpec, responseSpec, GET_FIXED_DEPOSIT_BY_ID_URL, "");
@@ -228,7 +262,7 @@ public class FixedDepositAccountHelper {
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     public static Float getPrincipalAfterCompoundingInterest(Calendar currentDate, Float principal, Integer depositPeriod,
-            double interestPerDay, Integer compoundingInterval, Integer postingInterval) {
+                                                             double interestPerDay, Integer compoundingInterval, Integer postingInterval) {
 
         Float totalInterest = 0.0f;
         Float interestEarned = 0.0f;
@@ -262,7 +296,7 @@ public class FixedDepositAccountHelper {
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     public HashMap updateFixedDepositAccount(final String clientID, final String productID, final String accountID, final String validFrom,
-            final String validTo, final String penalInterestType, final String submittedOnDate) {
+                                             final String validTo, final String penalInterestType, final String submittedOnDate) {
 
         final String fixedDepositApplicationJSON = new FixedDepositAccountHelper(this.requestSpec, this.responseSpec) //
                 .withSubmittedOnDate(submittedOnDate) //
@@ -278,9 +312,9 @@ public class FixedDepositAccountHelper {
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     public HashMap updateInterestCalculationConfigForFixedDeposit(final String clientID, final String productID, final String accountID,
-            final String submittedOnDate, final String validFrom, final String validTo, final String numberOfDaysPerYear,
-            final String penalInterestType, final String interestCalculationType, final String interestCompoundingPeriodType,
-            final String interestPostingPeriodType) {
+                                                                  final String submittedOnDate, final String validFrom, final String validTo, final String numberOfDaysPerYear,
+                                                                  final String penalInterestType, final String interestCalculationType, final String interestCompoundingPeriodType,
+                                                                  final String interestPostingPeriodType) {
 
         final String fixedDepositApplicationJSON = new FixedDepositAccountHelper(this.requestSpec, this.responseSpec) //
                 .withSubmittedOnDate(submittedOnDate) //
@@ -396,7 +430,7 @@ public class FixedDepositAccountHelper {
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     public Object prematureCloseForFixedDeposit(final Integer fixedDepositAccountId, final String closedOnDate, final String closureType,
-            final Integer toSavingsId, final String jsonAttributeToGetBack) {
+                                                final Integer toSavingsId, final String jsonAttributeToGetBack) {
         LOG.info("--------------------- PREMATURE CLOSE FOR FIXED DEPOSIT ----------------------------");
         return performFixedDepositActions(createFixedDepositCalculateInterestURL(PREMATURE_CLOSE_COMMAND, fixedDepositAccountId),
                 getPrematureCloseForFixedDepositAccountAsJSON(closedOnDate, closureType, toSavingsId), jsonAttributeToGetBack);
@@ -407,7 +441,7 @@ public class FixedDepositAccountHelper {
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     public Object closeForFixedDeposit(final Integer fixedDepositAccountId, final String closedOnDate, final String closureType,
-            final Integer toSavingsId, final String jsonAttributeToGetBack) {
+                                       final Integer toSavingsId, final String jsonAttributeToGetBack) {
         LOG.info("--------------------- CLOSE FOR FIXED DEPOSIT ----------------------------");
         return performFixedDepositActions(createFixedDepositCalculateInterestURL(CLOSE_FIXED_DEPOSIT_COMMAND, fixedDepositAccountId),
                 getPrematureCloseForFixedDepositAccountAsJSON(closedOnDate, closureType, toSavingsId), jsonAttributeToGetBack);
@@ -502,7 +536,7 @@ public class FixedDepositAccountHelper {
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     private String getPrematureCloseForFixedDepositAccountAsJSON(final String closedOnDate, final String closureType,
-            final Integer toSavingsId) {
+                                                                 final Integer toSavingsId) {
         final HashMap<String, Object> map = new HashMap<>();
         map.put("locale", CommonConstants.LOCALE);
         map.put("dateFormat", CommonConstants.DATE_FORMAT);
@@ -530,7 +564,7 @@ public class FixedDepositAccountHelper {
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     private Object performFixedDepositActions(final String postURLForFixedDeposit, final String jsonToBeSent,
-            final String jsonAttributeToGetBack) {
+                                              final String jsonAttributeToGetBack) {
         return Utils.performServerPost(this.requestSpec, this.responseSpec, postURLForFixedDeposit, jsonToBeSent, jsonAttributeToGetBack);
     }
 
@@ -561,11 +595,18 @@ public class FixedDepositAccountHelper {
     // org.apache.fineract.client.models.PostLoansLoanIdRequest)
     @Deprecated(forRemoval = true)
     public static ArrayList retrieveAllFixedDepositAccounts(final RequestSpecification requestSpec,
-            final ResponseSpecification responseSpec) {
+                                                            final ResponseSpecification responseSpec) {
         LOG.info("-------------------- RETRIEVING ALL FIXED DEPOSIT ACCOUNTS ---------------------");
         final ArrayList response = Utils.performServerGet(requestSpec, responseSpec,
                 FIXED_DEPOSIT_ACCOUNT_URL + "?" + Utils.TENANT_IDENTIFIER, "");
         return response;
+    }
+    @Deprecated(forRemoval = true)
+    public List<HashMap> getFixedDepositTransactions(final Integer accountID) {
+        LOG.info("---------------- RETRIEVING TRANSACTIONS FOR FIXED DEPOSIT ACCOUNT {} -----------------", accountID);
+        final String GET_FIXED_DEPOSIT_BY_ID_URL = FIXED_DEPOSIT_ACCOUNT_URL + "/" + accountID + "?associations=transactions&" + Utils.TENANT_IDENTIFIER;
+        final HashMap response = Utils.performServerGet(this.requestSpec, this.responseSpec, GET_FIXED_DEPOSIT_BY_ID_URL, "");
+        return (List<HashMap>) response.get("transactions");
     }
 
     public FixedDepositAccountHelper withSubmittedOnDate(final String fixedDepositApplicationSubmittedDate) {
@@ -604,7 +645,7 @@ public class FixedDepositAccountHelper {
     }
 
     public FixedDepositAccountHelper withLockinPeriodFrequency(final String lockingPeriodFrequencyType,
-            final String lockinPeriodFrequency) {
+                                                               final String lockinPeriodFrequency) {
         this.lockingPeriodFrequencyType = lockingPeriodFrequencyType;
         this.lockinPeriodFrequency = lockinPeriodFrequency;
         return this;

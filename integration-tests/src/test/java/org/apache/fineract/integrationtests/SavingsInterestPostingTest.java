@@ -58,6 +58,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static org.apache.fineract.integrationtests.common.BusinessDateHelper.runAt;
+
 @ExtendWith({ SavingsTestLifecycleExtension.class })
 public class SavingsInterestPostingTest {
 
@@ -396,7 +398,7 @@ public class SavingsInterestPostingTest {
             schedulerJobHelper.executeAndAwaitJob(POST_INTEREST_JOB_NAME);
 
             List<HashMap> txs = getInterestTransactions(accountId); // CON ESTE DEBEMOS DE VALIDAR QUE EL DIA DE MARZO
-                                                                    // NO SE TENGA POSTEO EN CERO
+            // NO SE TENGA POSTEO EN CERO
             for (HashMap tx : txs) {
                 BigDecimal amt = BigDecimal.valueOf(((Double) tx.get("amount")));
                 @SuppressWarnings("unchecked")
@@ -424,6 +426,112 @@ public class SavingsInterestPostingTest {
         }
     }
 
+    @Test
+    public void testSavingsAccountInterestPostingNoInterest(){
+        runAt("12 August 2025", () -> {
+            final String amountDeposit = "10000";
+
+            final Account assetAccount = accountHelper.createAssetAccount();
+            final Account incomeAccount = accountHelper.createIncomeAccount();
+            final Account expenseAccount = accountHelper.createExpenseAccount();
+            final Account liabilityAccount = accountHelper.createLiabilityAccount();
+            final Account interestReceivableAccount = accountHelper.createAssetAccount("interestReceivableAccount");
+            final Account savingsControlAccount = accountHelper.createLiabilityAccount("Savings Control");
+            final Account interestPayableAccount = accountHelper.createLiabilityAccount("Interest Payable");
+
+            DateTimeFormatter dateFormat = DateTimeFormatter.ofPattern("dd MMMM yyyy", Locale.US);
+            LocalDate mayDate = LocalDate.of(2025, 5, 1);
+
+            final String SUBMITTED_ON_DATE = mayDate.format(dateFormat);
+            final String APPROVED_ON_DATE = mayDate.format(dateFormat);
+
+            final Integer productId = createSavingsProductWithAccrualAccountingWithNoCompoundingPeriod(
+                    interestPayableAccount.getAccountID().toString(), savingsControlAccount.getAccountID().toString(),
+                    interestReceivableAccount.getAccountID().toString(), assetAccount, incomeAccount, expenseAccount, liabilityAccount);
+            Assertions.assertNotNull(productId);
+
+
+            final Integer clientId = ClientHelper.createClient(requestSpec, responseSpec, "01 January 2025");
+            Assertions.assertNotNull(clientId);
+
+
+            final Integer accountId = savingsAccountHelper.applyForSavingsApplicationOnDate(clientId, productId,
+                    SavingsAccountHelper.ACCOUNT_TYPE_INDIVIDUAL, SUBMITTED_ON_DATE);
+            savingsAccountHelper.approveSavingsOnDate(accountId, APPROVED_ON_DATE);
+            savingsAccountHelper.activateSavings(accountId, APPROVED_ON_DATE);
+
+            savingsAccountHelper.depositToSavingsAccount(accountId, amountDeposit, APPROVED_ON_DATE, CommonConstants.RESPONSE_RESOURCE_ID);
+
+            this.schedulerJobHelper.executeAndAwaitJob("Post Interest For Savings");
+
+            final BigDecimal initialDeposit = new BigDecimal(amountDeposit);
+
+            BigDecimal expectedInterestMay = calcInterestPosting(this.productHelper, amountDeposit, 31);
+            BigDecimal expectedInterestJune = calcInterestPosting(this.productHelper, amountDeposit, 30);
+            BigDecimal expectedInterestJuly = calcInterestPosting(this.productHelper, amountDeposit, 31);
+
+            LOG.info("Expected Interest May (31 days): {}", expectedInterestMay);
+            LOG.info("Expected Interest June (30 days): {}", expectedInterestJune);
+            LOG.info("Expected Interest July (31 days): {}", expectedInterestJuly);
+
+            List<HashMap> interestTransactions = getInterestTransactions(accountId);
+            Assertions.assertEquals(3, interestTransactions.size(), "Should find 3 interest postings.");
+
+            LocalDate postDateMay = LocalDate.of(2025, 6, 1);
+            LocalDate postDateJune = LocalDate.of(2025, 7, 1);
+            LocalDate postDateJuly = LocalDate.of(2025, 8, 1);
+            BigDecimal totalInterestPosted = BigDecimal.ZERO;
+            int validatedPostings = 0;
+
+            for (HashMap transaction : interestTransactions) {
+                BigDecimal txAmount = new BigDecimal(transaction.get("amount").toString());
+
+                if (isDate(transaction, postDateMay)) {
+                    LOG.info("Validating MAY Interest (Posted {}): Expected {}, Actual {}", postDateMay, expectedInterestMay, txAmount);
+                    Assertions.assertEquals(0, expectedInterestMay.compareTo(txAmount), "May interest (31 days) mismatch");
+                    validatedPostings++;
+                } else if (isDate(transaction, postDateJune)) {
+                    LOG.info("Validating JUNE Interest (Posted {}): Expected {}, Actual {}", postDateJune, expectedInterestJune, txAmount);
+                    Assertions.assertEquals(0, expectedInterestJune.compareTo(txAmount), "June interest (30 days) mismatch");
+                    validatedPostings++;
+                } else if (isDate(transaction, postDateJuly)) {
+                    LOG.info("Validating JULY Interest (Posted {}): Expected {}, Actual {}", postDateJuly, expectedInterestJuly, txAmount);
+                    Assertions.assertEquals(0, expectedInterestJuly.compareTo(txAmount), "July interest (31 days) mismatch");
+                    validatedPostings++;
+                } else {
+                    LocalDate txDate = coerceToLocalDate(transaction);
+                    Assertions.fail("Found an interest posting on an unexpected date: " + txDate);
+                }
+
+                totalInterestPosted = totalInterestPosted.add(txAmount);
+            }
+
+
+            Assertions.assertEquals(3, validatedPostings, "Did not find and validate all 3 expected postings.");
+
+            BigDecimal expectedFinalBalance = initialDeposit.add(totalInterestPosted);
+
+            List<HashMap> allTransactions = savingsAccountHelper.getSavingsTransactions(accountId);
+            Assertions.assertFalse(allTransactions.isEmpty(), "Transaction list should not be empty");
+
+            HashMap latestTransaction = allTransactions.get(0);
+
+            Assertions.assertTrue(latestTransaction.containsKey("runningBalance"), "Latest transaction map must contain 'runningBalance'");
+
+            BigDecimal actualFinalBalance = new BigDecimal(latestTransaction.get("runningBalance").toString());
+
+            LOG.info("Expected Final Balance: {} (Deposit {}) + (Interest {})", expectedFinalBalance, initialDeposit, totalInterestPosted);
+            LOG.info("Actual Final Balance (from last transaction): {}", actualFinalBalance);
+
+            Assertions.assertEquals(0, expectedFinalBalance.compareTo(actualFinalBalance),
+                    "The final account balance must be the sum of the initial deposit plus interest.");
+
+            LOG.info("--- Savings account interest posting test completed successfully ---");
+
+        });
+    }
+
+
     private List<HashMap> getInterestTransactions(Integer savingsAccountId) {
         List<HashMap> all = savingsAccountHelper.getSavingsTransactions(savingsAccountId);
         List<HashMap> filtered = new ArrayList<>();
@@ -450,6 +558,20 @@ public class SavingsInterestPostingTest {
         final String savingsProductJSON = this.productHelper.build();
         return SavingsProductHelper.createSavingsProduct(savingsProductJSON, requestSpec, responseSpec);
     }
+
+    public Integer createSavingsProductWithAccrualAccountingWithNoCompoundingPeriod(final String interestPayableAccount,
+                                                                                    final String savingsControlAccount, final String interestReceivableAccount, final Account... accounts) {
+        LOG.info("------------------------------CREATING NEW SAVINGS PRODUCT  ---------------------------------------");
+        this.productHelper = new SavingsProductHelper()
+                .withAccountInterestReceivables(interestReceivableAccount).withSavingsControlAccountId(savingsControlAccount)
+                .withInterestPayableAccountId(interestPayableAccount).withDigitsAfterDecimal("2")
+                .withInterestCompoundingPeriodTypeAsNone().withInterestCalculationDaysInYearType_360()
+                .withAccountingRuleAsAccrualBased(accounts);
+
+        final String savingsProductJSON = this.productHelper.build();
+        return SavingsProductHelper.createSavingsProduct(savingsProductJSON, requestSpec, responseSpec);
+    }
+
 
     private BigDecimal calcInterestPosting(SavingsProductHelper productHelper, String amount, long days) {
         BigDecimal rate = productHelper.getNominalAnnualInterestRate().divide(new BigDecimal("100.00"));

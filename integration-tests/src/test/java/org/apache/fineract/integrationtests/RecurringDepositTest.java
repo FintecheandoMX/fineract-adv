@@ -17,7 +17,8 @@
  * under the License.
  */
 package org.apache.fineract.integrationtests;
-
+import org.apache.fineract.integrationtests.common.BusinessDateHelper;
+import static org.apache.fineract.integrationtests.common.BusinessDateHelper.runAt;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.restassured.builder.RequestSpecBuilder;
@@ -25,6 +26,8 @@ import io.restassured.builder.ResponseSpecBuilder;
 import io.restassured.http.ContentType;
 import io.restassured.specification.RequestSpecification;
 import io.restassured.specification.ResponseSpecification;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.time.LocalDate;
@@ -32,13 +35,8 @@ import java.time.LocalTime;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Calendar;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.TimeZone;
+import java.util.*;
+
 import org.apache.fineract.accounting.common.AccountingConstants.FinancialActivity;
 import org.apache.fineract.integrationtests.common.ClientHelper;
 import org.apache.fineract.integrationtests.common.CommonConstants;
@@ -59,6 +57,7 @@ import org.apache.fineract.integrationtests.common.recurringdeposit.RecurringDep
 import org.apache.fineract.integrationtests.common.savings.SavingsAccountHelper;
 import org.apache.fineract.integrationtests.common.savings.SavingsProductHelper;
 import org.apache.fineract.integrationtests.common.savings.SavingsStatusChecker;
+import org.apache.fineract.portfolio.savings.SavingsAccountTransactionType;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -114,6 +113,7 @@ public class RecurringDepositTest {
     // calculation in this test,
     // and then to compare the exact results
     public static final Float THRESHOLD = 1.0f;
+    private SchedulerJobHelper schedulerJobHelper;
 
     @BeforeEach
     public void setup() {
@@ -122,6 +122,8 @@ public class RecurringDepositTest {
         this.requestSpec.header("Authorization", "Basic " + Utils.loginIntoServerAndGetBase64EncodedAuthenticationKey());
         this.requestSpec.header("Fineract-Platform-TenantId", "default");
         this.responseSpec = new ResponseSpecBuilder().expectStatusCode(200).build();
+        this.accountHelper = new AccountHelper(this.requestSpec, this.responseSpec);
+        this.schedulerJobHelper = new SchedulerJobHelper(this.requestSpec);
         this.journalEntryHelper = new JournalEntryHelper(this.requestSpec, this.responseSpec);
         this.financialActivityAccountHelper = new FinancialActivityAccountHelper(this.requestSpec);
         TimeZone.setDefault(TimeZone.getTimeZone(Utils.TENANT_TIME_ZONE));
@@ -2888,8 +2890,160 @@ public class RecurringDepositTest {
         testFixedDepositAccountForInterestRate(chartToUse, depositAmount, depositPeriod, interestRate);
     }
 
+    @Test
+    public void RecurringDepositNoneInterest(){
+        this.recurringDepositProductHelper = new RecurringDepositProductHelper(this.requestSpec, this.responseSpec);
+        this.recurringDepositAccountHelper = new RecurringDepositAccountHelper(this.requestSpec, this.responseSpec);
+        runAt("12 August 2025", () -> {
+            final Float amount = 10000.0F;
+            final Account assetAccount = this.accountHelper.createAssetAccount();
+            final Account incomeAccount = this.accountHelper.createIncomeAccount();
+            final Account expenseAccount = this.accountHelper.createExpenseAccount();
+            final Account liabilityAccount = this.accountHelper.createLiabilityAccount();
+            final Account savingsControlAccount = this.accountHelper.createLiabilityAccount("Savings Control");
+
+
+
+            DateTimeFormatter dateFormat = DateTimeFormatter.ofPattern("dd MMMM yyyy", Locale.US);
+            LocalDate mayDate = LocalDate.of(2025, 5, 1);
+
+            final String SUBMITTED_ON_DATE = mayDate.format(dateFormat);
+            final String APPROVED_ON_DATE = mayDate.format(dateFormat);
+
+            LOG.info("Submitted Date: {}", SUBMITTED_ON_DATE);
+
+            final Integer recurringDepositProductId =createRecurringProductWithNoneInterest(liabilityAccount, expenseAccount,incomeAccount,assetAccount, savingsControlAccount);
+            Assertions.assertNotNull(recurringDepositProductId);
+
+            Integer clientId = ClientHelper.createClient(this.requestSpec, this.responseSpec, "01 January 2025");
+            Assertions.assertNotNull(clientId);
+
+            Integer recurringDepositAccountId = applyForRecurringDepositApplication(clientId.toString(), recurringDepositProductId.toString(),
+                    SUBMITTED_ON_DATE, WHOLE_TERM, Integer.valueOf(CLOSURE_TYPE_REINVEST));
+            Assertions.assertNotNull(recurringDepositAccountId);
+
+            this.recurringDepositAccountHelper.approveRecurringDeposit(recurringDepositAccountId, APPROVED_ON_DATE);
+            this.recurringDepositAccountHelper.activateRecurringDeposit(recurringDepositAccountId, APPROVED_ON_DATE);
+
+            LocalDate juneDate = LocalDate.of(2025, 6, 1);
+
+            final String JUNE_DATE = juneDate.format(dateFormat);
+
+            recurringDepositAccountHelper.depositToRecurringDepositAccount(recurringDepositAccountId, amount, APPROVED_ON_DATE);
+            recurringDepositAccountHelper.depositToRecurringDepositAccount(recurringDepositAccountId, amount, JUNE_DATE);
+
+            LocalDate julyDate = LocalDate.of(2025, 7, 1);
+
+            final String JULY_DATE = julyDate.format(dateFormat);
+
+            recurringDepositAccountHelper.depositToRecurringDepositAccount(recurringDepositAccountId, amount, JULY_DATE);
+
+            this.schedulerJobHelper.executeAndAwaitJob("Post Interest For Savings");
+
+            final BigDecimal annualRate = new BigDecimal("0.08");
+            final BigDecimal daysInYear = new BigDecimal("365");
+            final int scale = 4;
+            final BigDecimal principalMay = new BigDecimal("10000.00");
+            final BigDecimal expectedInterestMay = principalMay.multiply(annualRate)
+                    .divide(daysInYear, 8, RoundingMode.HALF_EVEN)
+                    .multiply(new BigDecimal(31)) // 31 days in May
+                    .setScale(scale, RoundingMode.HALF_EVEN); // 67.9452
+
+            // JUNE Interest (Posted on July 1st)
+            // (20,000 * 0.08 / 365) * 30 days
+            final BigDecimal principalJune = new BigDecimal("20000.00");
+            final BigDecimal expectedInterestJune = principalJune.multiply(annualRate)
+                    .divide(daysInYear, 8, RoundingMode.HALF_EVEN)
+                    .multiply(new BigDecimal(30)) // 30 days in June
+                    .setScale(scale, RoundingMode.HALF_EVEN); // 131.5068
+
+            // JULY Interest (Posted on August 1st)
+            // (30,000 * 0.08 / 365) * 31 days
+            final BigDecimal principalJuly = new BigDecimal("30000.00");
+            final BigDecimal expectedInterestJuly = principalJuly.multiply(annualRate)
+                    .divide(daysInYear, 8, RoundingMode.HALF_EVEN)
+                    .multiply(new BigDecimal(31)) // 31 days in July
+                    .setScale(scale, RoundingMode.HALF_EVEN); // 203.8356
+
+            LOG.info("Expected Interest (May): {}", expectedInterestMay);
+            LOG.info("Expected Interest (Jun): {}", expectedInterestJune);
+            LOG.info("Expected Interest (Jul): {}", expectedInterestJuly);
+
+            List<HashMap> allTransactions = recurringDepositAccountHelper.getRecurringDepositTransactions(this.requestSpec, this.responseSpec, recurringDepositAccountId);
+            Assertions.assertNotNull(allTransactions, "Transaction list should not be null");
+
+            List<HashMap> interestTransactions = new ArrayList<>();
+            BigDecimal totalInterestPosted = BigDecimal.ZERO;
+            BigDecimal totalDeposits = BigDecimal.ZERO;
+
+            for (HashMap transaction : allTransactions) {
+                Map<String, Object> type = (Map<String, Object>) transaction.get("transactionType");
+                SavingsAccountTransactionType txType = SavingsAccountTransactionType.fromInt((Integer) type.get("id"));
+
+                if (txType.isInterestPosting()) {
+                    interestTransactions.add(transaction);
+                    BigDecimal txAmount = new BigDecimal(transaction.get("amount").toString());
+                    totalInterestPosted = totalInterestPosted.add(txAmount);
+                } else if (txType.isDeposit()) {
+                    BigDecimal txAmount = new BigDecimal(transaction.get("amount").toString());
+                    totalDeposits = totalDeposits.add(txAmount);
+                }
+            }
+
+            LOG.info("--- Transaction Validation ---");
+            LOG.info("Found {} interest posting transactions.", interestTransactions.size());
+
+            Assertions.assertEquals(3, interestTransactions.size(), "Should find 3 interest postings.");
+
+            BigDecimal actualInterestJuly = new BigDecimal(interestTransactions.get(0).get("amount").toString());
+            LOG.info("Validating JULY Interest (Posted Aug 1st, index 0): Expected {}, Actual {}", expectedInterestJuly, actualInterestJuly);
+            Assertions.assertEquals(0, expectedInterestJuly.compareTo(actualInterestJuly),
+                    "July interest (31 days on 30,000) should be 203.8356");
+
+            BigDecimal actualInterestJune = new BigDecimal(interestTransactions.get(1).get("amount").toString());
+            LOG.info("Validating JUNE Interest (Posted July 1st, index 1): Expected {}, Actual {}", expectedInterestJune, actualInterestJune);
+            Assertions.assertEquals(0, expectedInterestJune.compareTo(actualInterestJune),
+                    "June interest (30 days on 20,000) should be 131.5068");
+
+            BigDecimal actualInterestMay = new BigDecimal(interestTransactions.get(2).get("amount").toString());
+            LOG.info("Validating MAY Interest (Posted June 1st, index 2): Expected {}, Actual {}", expectedInterestMay, actualInterestMay);
+            Assertions.assertEquals(0, expectedInterestMay.compareTo(actualInterestMay),
+                    "May interest (31 days on 10,000) should be 67.9452");
+
+            BigDecimal expectedFinalBalance = totalDeposits.add(totalInterestPosted).setScale(3, RoundingMode.DOWN);
+
+            BigDecimal actualFinalBalance = new BigDecimal(allTransactions.get(0).get("runningBalance").toString());
+
+            LOG.info("Expected Final Balance: {} (Deposits {}) + (Interest {})", expectedFinalBalance, totalDeposits, totalInterestPosted);
+            LOG.info("Actual Final Balance (from last transaction): {}", actualFinalBalance);
+
+            Assertions.assertEquals(0, expectedFinalBalance.compareTo(actualFinalBalance),
+                    "The final balance must be the sum of deposits plus the simple interest generated.");
+
+            LOG.info("--- Test completed successfully ---");
+        });
+
+    }
+
+    private Integer createRecurringProductWithNoneInterest(Account ...accounts){
+        LOG.info("------------------------------CREATING NEW RECURRING DEPOSIT PRODUCT ---------------------------------------");
+        this.recurringDepositProductHelper = new RecurringDepositProductHelper(null,null).withInterestCompoundingPeriodTypeAsNone()
+                .withAmountAndPeriodRangeChart();
+        final String fixedRecurringProductJSON = this.recurringDepositProductHelper.build("01 January 2025", "01 January 2035");
+        return RecurringDepositProductHelper.createRecurringDepositProduct(fixedRecurringProductJSON, requestSpec ,responseSpec);
+    }
+    private Integer applyForRecurringDepositApplication(final String clientID, final String productID, final String submittedOnDate,
+                                                                   final String penalInterestType, final Integer maturityInstructionId) {
+        LOG.info("--------------------------------APPLYING FOR RECURRING RECURRING DEPOSIT ACCOUNT --------------------------------");
+        final String fixedDepositApplicationJSON = new RecurringDepositAccountHelper(this.requestSpec, this.responseSpec)
+                .withInterestCompoundingPeriodType("8").withSubmittedOnDate(submittedOnDate)
+                .build(clientID, productID, penalInterestType);
+        return RecurringDepositAccountHelper.applyRecurringDepositApplication(fixedDepositApplicationJSON, this.requestSpec,
+                this.responseSpec);
+    }
+
     private void testFixedDepositAccountForInterestRate(final String chartToUse, final String depositAmount, final String depositPeriod,
-            final Float interestRate) {
+                                                        final Float interestRate) {
         this.recurringDepositProductHelper = new RecurringDepositProductHelper(this.requestSpec, this.responseSpec);
         this.accountHelper = new AccountHelper(this.requestSpec, this.responseSpec);
         this.savingsAccountHelper = new SavingsAccountHelper(this.requestSpec, this.responseSpec);
@@ -2944,7 +3098,7 @@ public class RecurringDepositTest {
     }
 
     private Integer createRecurringDepositProduct(final String validFrom, final String validTo, final String accountingRule,
-            Account... accounts) {
+                                                  Account... accounts) {
         LOG.info("------------------------------CREATING NEW RECURRING DEPOSIT PRODUCT ---------------------------------------");
         RecurringDepositProductHelper recurringDepositProductHelper = new RecurringDepositProductHelper(this.requestSpec,
                 this.responseSpec);
@@ -2958,7 +3112,7 @@ public class RecurringDepositTest {
     }
 
     private Integer createRecurringDepositProductWithWithHoldTax(final String validFrom, final String validTo, final String taxGroupId,
-            final String accountingRule, Account... accounts) {
+                                                                 final String accountingRule, Account... accounts) {
         LOG.info("------------------------------CREATING NEW RECURRING DEPOSIT PRODUCT ---------------------------------------");
         RecurringDepositProductHelper recurringDepositProductHelper = new RecurringDepositProductHelper(this.requestSpec,
                 this.responseSpec);
@@ -2973,7 +3127,7 @@ public class RecurringDepositTest {
     }
 
     private Integer createRecurringDepositProduct(final String validFrom, final String validTo, final String accountingRule,
-            final String chartToBePicked, Account... accounts) {
+                                                  final String chartToBePicked, Account... accounts) {
         LOG.info("------------------------------CREATING NEW RECURRING DEPOSIT PRODUCT ---------------------------------------");
         RecurringDepositProductHelper recurringDepositProductHelper = new RecurringDepositProductHelper(this.requestSpec,
                 this.responseSpec);
@@ -2986,25 +3140,25 @@ public class RecurringDepositTest {
         switch (chartToBePicked) {
             case "period":
                 recurringDepositProductHelper = recurringDepositProductHelper.withPeriodRangeChart();
-            break;
+                break;
             case "amount":
                 recurringDepositProductHelper = recurringDepositProductHelper.withAmountRangeChart();
-            break;
+                break;
             case "period_amount":
                 recurringDepositProductHelper = recurringDepositProductHelper.withPeriodAndAmountRangeChart();
-            break;
+                break;
             case "amount_period":
                 recurringDepositProductHelper = recurringDepositProductHelper.withAmountAndPeriodRangeChart();
-            break;
+                break;
             default:
-            break;
+                break;
         }
         final String recurringDepositProductJSON = recurringDepositProductHelper.build(validFrom, validTo);
         return RecurringDepositProductHelper.createRecurringDepositProduct(recurringDepositProductJSON, requestSpec, responseSpec);
     }
 
     private Integer applyForRecurringDepositApplication(final String clientID, final String productID, final String validFrom,
-            final String validTo, final String submittedOnDate, final String penalInterestType, final String expectedFirstDepositOnDate) {
+                                                        final String validTo, final String submittedOnDate, final String penalInterestType, final String expectedFirstDepositOnDate) {
         LOG.info("--------------------------------APPLYING FOR RECURRING DEPOSIT ACCOUNT --------------------------------");
         final String recurringDepositApplicationJSON = new RecurringDepositAccountHelper(this.requestSpec, this.responseSpec)
                 .withSubmittedOnDate(submittedOnDate).withExpectedFirstDepositOnDate(expectedFirstDepositOnDate)
@@ -3014,8 +3168,8 @@ public class RecurringDepositTest {
     }
 
     private Integer applyForRecurringDepositApplication(final String clientID, final String productID, final String validFrom,
-            final String validTo, final String submittedOnDate, final String penalInterestType, final String expectedFirstDepositOnDate,
-            final String depositAmount, final String depositPeriod) {
+                                                        final String validTo, final String submittedOnDate, final String penalInterestType, final String expectedFirstDepositOnDate,
+                                                        final String depositAmount, final String depositPeriod) {
         LOG.info("--------------------------------APPLYING FOR RECURRING DEPOSIT ACCOUNT --------------------------------");
         final String recurringDepositApplicationJSON = new RecurringDepositAccountHelper(this.requestSpec, this.responseSpec)
                 .withSubmittedOnDate(submittedOnDate).withExpectedFirstDepositOnDate(expectedFirstDepositOnDate)
@@ -3025,7 +3179,7 @@ public class RecurringDepositTest {
     }
 
     private Integer createSavingsProduct(final RequestSpecification requestSpec, final ResponseSpecification responseSpec,
-            final String minOpenningBalance, final String accountingRule, Account... accounts) {
+                                         final String minOpenningBalance, final String accountingRule, Account... accounts) {
         LOG.info("------------------------------CREATING NEW SAVINGS PRODUCT ---------------------------------------");
         SavingsProductHelper savingsProductHelper = new SavingsProductHelper();
         if (accountingRule.equals(CASH_BASED)) {
@@ -3089,7 +3243,7 @@ public class RecurringDepositTest {
     }
 
     private void assertFinancialActivityAccountCreation(Integer financialActivityAccountId, Integer financialActivityId,
-            Account glAccount) {
+                                                        Account glAccount) {
         HashMap mappingDetails = this.financialActivityAccountHelper.getFinancialActivityAccount(financialActivityAccountId,
                 this.responseSpec);
         Assertions.assertEquals(financialActivityId, ((HashMap) mappingDetails.get("financialActivityData")).get("id"));

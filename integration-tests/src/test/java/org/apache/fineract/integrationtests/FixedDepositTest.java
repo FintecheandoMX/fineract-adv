@@ -36,16 +36,12 @@ import java.math.RoundingMode;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.time.LocalDate;
+import java.time.Month;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Calendar;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.TimeZone;
+import java.util.*;
+
 import lombok.extern.slf4j.Slf4j;
 import org.apache.fineract.accounting.common.AccountingConstants.FinancialActivity;
 import org.apache.fineract.client.models.PutGlobalConfigurationsRequest;
@@ -56,6 +52,7 @@ import org.apache.fineract.infrastructure.core.exception.PlatformApiDataValidati
 import org.apache.fineract.infrastructure.core.serialization.FromJsonHelper;
 import org.apache.fineract.integrationtests.client.IntegrationTest;
 import org.apache.fineract.integrationtests.common.BusinessDateHelper;
+import static org.apache.fineract.integrationtests.common.BusinessDateHelper.runAt;
 import org.apache.fineract.integrationtests.common.ClientHelper;
 import org.apache.fineract.integrationtests.common.CommonConstants;
 import org.apache.fineract.integrationtests.common.GlobalConfigurationHelper;
@@ -76,6 +73,7 @@ import org.apache.fineract.integrationtests.common.savings.SavingsAccountHelper;
 import org.apache.fineract.integrationtests.common.savings.SavingsProductHelper;
 import org.apache.fineract.integrationtests.common.savings.SavingsStatusChecker;
 import org.apache.fineract.organisation.monetary.domain.MoneyHelper;
+import org.apache.fineract.portfolio.savings.SavingsAccountTransactionType;
 import org.apache.fineract.portfolio.savings.data.DepositAccountDataValidator;
 import org.apache.fineract.portfolio.savings.service.FixedDepositAccountInterestCalculationServiceImpl;
 import org.junit.jupiter.api.AfterEach;
@@ -2761,6 +2759,207 @@ public class FixedDepositTest extends IntegrationTest {
         }
 
     }
+    @Test
+    public  void FixedDepositNoneInterestAccruals(){
+        this.fixedDepositProductHelper = new FixedDepositProductHelper(this.requestSpec, this.responseSpec);
+        this.fixedDepositAccountHelper = new FixedDepositAccountHelper(this.requestSpec, this.responseSpec);
+        runAt("12 August 2025", () -> {
+            final String amount = "10000";
+            final Account assetAccount = this.accountHelper.createAssetAccount();
+            final Account incomeAccount = this.accountHelper.createIncomeAccount();
+            final Account expenseAccount = this.accountHelper.createExpenseAccount();
+            final Account liabilityAccount = this.accountHelper.createLiabilityAccount();
+            final Account savingsControlAccount = this.accountHelper.createLiabilityAccount("Savings Control");
+
+            DateTimeFormatter dateFormat = DateTimeFormatter.ofPattern("dd MMMM yyyy", Locale.US);
+            LocalDate mayDate = LocalDate.of(2025, 5, 1);
+
+            final String SUBMITTED_ON_DATE = mayDate.format(dateFormat);
+            final String APPROVED_ON_DATE = mayDate.format(dateFormat);
+
+
+            log.info("Submitted Date: {}", SUBMITTED_ON_DATE);
+
+
+            final Integer fixedDepositProductId = createFixedWithAccrualAccountingWithNoneInterest(liabilityAccount, expenseAccount,incomeAccount,assetAccount, savingsControlAccount);
+            Assertions.assertNotNull(fixedDepositProductId);
+
+            Integer clientId = ClientHelper.createClient(this.requestSpec, this.responseSpec, "01 January 2025");
+            Assertions.assertNotNull(clientId);
+
+            Integer fixedDepositAccountId = applyForFixedDepositApplication_10000(clientId.toString(), fixedDepositProductId.toString(),
+                    SUBMITTED_ON_DATE, WHOLE_TERM, Integer.valueOf(CLOSURE_TYPE_REINVEST));
+            Assertions.assertNotNull(fixedDepositAccountId);
+
+            this.fixedDepositAccountHelper.approveFixedDeposit(fixedDepositAccountId, APPROVED_ON_DATE);
+            this.fixedDepositAccountHelper.activateFixedDeposit(fixedDepositAccountId, APPROVED_ON_DATE);
+
+
+            this.schedulerJobHelper.executeAndAwaitJob("Add Accrual Transactions For Savings");
+
+            BigDecimal expectedDailyInterest = new BigDecimal(amount)
+                    .multiply(new BigDecimal("0.15"))
+                    .divide(new BigDecimal("360"), 2, RoundingMode.HALF_EVEN);
+
+            List<HashMap> allTransactions = this.fixedDepositAccountHelper.getFixedDepositTransactions(fixedDepositAccountId);
+            Assertions.assertNotNull(allTransactions, "The transaction list should not be null");
+
+            for (HashMap transaction : allTransactions) {
+                Map<String, Object> type = (Map<String, Object>) transaction.get("transactionType");
+                SavingsAccountTransactionType txType = SavingsAccountTransactionType.fromInt((Integer) type.get("id"));
+                if (txType.isAccrual()){
+                    BigDecimal amountTransaction = new BigDecimal(Float.toString((float)transaction.get("amount")));
+                    assertEquals(expectedDailyInterest,amountTransaction, "The amount is different from the expected value in all operations.");
+                }
+
+            }
+        });
+    }
+
+    @Test
+    public  void FixedDepositNoneInterestPostInterest(){
+        this.fixedDepositProductHelper = new FixedDepositProductHelper(this.requestSpec, this.responseSpec);
+        this.fixedDepositAccountHelper = new FixedDepositAccountHelper(this.requestSpec, this.responseSpec);
+        runAt("12 August 2025", () -> {
+            final String amount = "10000";
+            final Account assetAccount = this.accountHelper.createAssetAccount();
+            final Account incomeAccount = this.accountHelper.createIncomeAccount();
+            final Account expenseAccount = this.accountHelper.createExpenseAccount();
+            final Account liabilityAccount = this.accountHelper.createLiabilityAccount();
+            final Account savingsControlAccount = this.accountHelper.createLiabilityAccount("Savings Control");
+
+            DateTimeFormatter dateFormat = DateTimeFormatter.ofPattern("dd MMMM yyyy", Locale.US);
+            LocalDate mayDate = LocalDate.of(2025, 5, 1);
+
+            final String SUBMITTED_ON_DATE = mayDate.format(dateFormat);
+            final String APPROVED_ON_DATE = mayDate.format(dateFormat);
+
+            log.info("Submitted Date: {}", SUBMITTED_ON_DATE);
+
+            final Integer fixedDepositProductId = createFixedWithAccrualAccountingWithNoneInterest(liabilityAccount, expenseAccount,incomeAccount,assetAccount, savingsControlAccount);
+            Assertions.assertNotNull(fixedDepositProductId);
+
+            Integer clientId = ClientHelper.createClient(this.requestSpec, this.responseSpec, "01 January 2025");
+            Assertions.assertNotNull(clientId);
+
+            Integer fixedDepositAccountId = applyForFixedDepositApplication_10000(clientId.toString(), fixedDepositProductId.toString(),
+                    SUBMITTED_ON_DATE, WHOLE_TERM, Integer.valueOf(CLOSURE_TYPE_REINVEST));
+            Assertions.assertNotNull(fixedDepositAccountId);
+
+            this.fixedDepositAccountHelper.approveFixedDeposit(fixedDepositAccountId, APPROVED_ON_DATE);
+            this.fixedDepositAccountHelper.activateFixedDeposit(fixedDepositAccountId, APPROVED_ON_DATE);
+
+            this.schedulerJobHelper.executeAndAwaitJob("Post Interest For Savings");
+
+            final BigDecimal initialDeposit = new BigDecimal("10000.00");
+            final BigDecimal annualRate = new BigDecimal("0.15");
+            final BigDecimal daysInYear = new BigDecimal("360");
+            final int highPrecision = 8;
+
+            final BigDecimal dailyInterest = initialDeposit.multiply(annualRate)
+                    .divide(daysInYear, highPrecision, RoundingMode.HALF_EVEN);
+
+            final BigDecimal expectedInterestMay = dailyInterest.multiply(new BigDecimal(31))
+                    .setScale(2, RoundingMode.HALF_EVEN); // (10000 * 0.15 / 360) * 31 = 129.17
+
+            final BigDecimal expectedInterestJune = dailyInterest.multiply(new BigDecimal(30))
+                    .setScale(2, RoundingMode.HALF_EVEN); // (10000 * 0.15 / 360) * 30 = 125.00
+
+            final BigDecimal expectedInterestJuly = dailyInterest.multiply(new BigDecimal(31))
+                    .setScale(2, RoundingMode.HALF_EVEN); // (10000 * 0.15 / 360) * 31 = 129.17
+
+            List<HashMap> allTransactions = this.fixedDepositAccountHelper.getFixedDepositTransactions(fixedDepositAccountId);
+            Assertions.assertNotNull(allTransactions, "Transaction list should not be null");
+
+
+            List<HashMap> interestTransactions = new ArrayList<>();
+            BigDecimal totalInterestPosted = BigDecimal.ZERO;
+
+            for (HashMap transaction : allTransactions) {
+                Map<String, Object> type = (Map<String, Object>) transaction.get("transactionType");
+                SavingsAccountTransactionType txType = SavingsAccountTransactionType.fromInt((Integer) type.get("id"));
+
+                if (txType.isInterestPosting()) {
+                    interestTransactions.add(transaction);
+                    BigDecimal txAmount = new BigDecimal(transaction.get("amount").toString());
+                    totalInterestPosted = totalInterestPosted.add(txAmount);
+                }
+            }
+
+            log.info("--- Transaction validation finished ---");
+            log.info("Found {} interest posting transactions.", interestTransactions.size());
+
+            // --- ASSERTION 1: Validate the interest postings by order ---
+
+            // We expect 3 interest postings
+            Assertions.assertEquals(3, interestTransactions.size(), "Should find 3 interest postings.");
+
+            // Newest: Aug 1st (for July, 31 days)
+            BigDecimal actualInterestJuly = new BigDecimal(interestTransactions.get(0).get("amount").toString());
+            log.info("Validating JULY Interest (Posted Aug 1st, index 0): Expected {}, Actual {}", expectedInterestJuly, actualInterestJuly);
+            Assertions.assertEquals(0, expectedInterestJuly.compareTo(actualInterestJuly),
+                    "July interest (31 days) posted on Aug 1st should be 129.17");
+
+            // Middle: July 1st (for June, 30 days)
+            BigDecimal actualInterestJune = new BigDecimal(interestTransactions.get(1).get("amount").toString());
+            log.info("Validating JUNE Interest (Posted July 1st, index 1): Expected {}, Actual {}", expectedInterestJune, actualInterestJune);
+            Assertions.assertEquals(0, expectedInterestJune.compareTo(actualInterestJune),
+                    "June interest (30 days) posted on July 1st should be 125.00");
+
+            // Oldest: June 1st (for May, 31 days)
+            BigDecimal actualInterestMay = new BigDecimal(interestTransactions.get(2).get("amount").toString());
+            log.info("Validating MAY Interest (Posted June 1st, index 2): Expected {}, Actual {}", expectedInterestMay, actualInterestMay);
+            Assertions.assertEquals(0, expectedInterestMay.compareTo(actualInterestMay),
+                    "May interest (31 days) posted on June 1st should be 129.17");
+
+
+            // --- ASSERTION 2: Validate the final balance ---
+
+            BigDecimal expectedFinalBalance = initialDeposit.add(totalInterestPosted);
+
+            HashMap latestTransaction = allTransactions.get(0);
+
+            BigDecimal actualFinalBalance = new BigDecimal(latestTransaction.get("runningBalance").toString());
+
+            log.info("Expected Final Balance: {} (Deposit {}) + (Interest {})", expectedFinalBalance, initialDeposit, totalInterestPosted);
+            log.info("Actual Final Balance (from last transaction): {}", actualFinalBalance);
+
+            Assertions.assertEquals(0, expectedFinalBalance.compareTo(actualFinalBalance),
+                    "The final account balance must be the sum of the initial deposit plus interest.");
+
+            log.info("--- Test completed successfully ---");
+        });
+    }
+
+    public Integer createFixedWithAccrualAccountingWithNoneInterest(Account... accounts) {
+        this.fixedDepositProductHelper = new FixedDepositProductHelper(null,null)
+                .withInterestCompoundingPeriodTypeAsNone()
+                .withDigitsAfterDecimal("2")
+                .withInMultiplesOf("")
+                .withMinDepositAmount("1")
+                .withMaxDepositAmount("1000000000")
+                .withInterestPostingPeriodTypeAsMonthly()
+                .withInterestCalculationPeriodTypeAsDailyBalance()
+                .withLockinPeriodFrequency("")
+                .withLockingPeriodFrequencyType("")
+                .withMinDepositTerm("1")
+                .minDepositTermTypeDays()
+                .withMaxDepositTerm("360")
+                .maxDepositTermTypeDays()
+                .withOutInMultiplesOfDepositTerm()
+                .withOutInMultiplesOfDepositTermType()
+                .withPreClosurePenalApplicable(false)
+                .withAccountingRuleAsAccrual(accounts)
+                .withInterestPayableAccountId(accounts[0].getAccountID().toString())
+                .withSavingsReferenceAccountId(accounts[3].getAccountID().toString())
+                .withFixedpenaltiesReceivableAccountId(accounts[3].getAccountID().toString())
+                .withInterestPayableAccountId(accounts[1].getAccountID().toString())
+                .withInterestOnSavingsAccountId(accounts[2].getAccountID().toString())
+                .withSavingsControlAccountId(accounts[4].getAccountID().toString())
+                .withPeriodFixed();
+        final String fixedProductJSON = this.fixedDepositProductHelper.build("01 January 2025", "01 January 2035", true);
+        return FixedDepositProductHelper.createFixedDepositProduct(fixedProductJSON, requestSpec ,responseSpec);
+    }
 
     private Integer createFixedDepositProduct(final String validFrom, final String validTo, final String accountingRule,
             Account... accounts) {
@@ -2836,6 +3035,27 @@ public class FixedDepositTest extends IntegrationTest {
         final String fixedDepositProductJSON = fixedDepositProductHelper //
                 .build(validFrom, validTo);
         return FixedDepositProductHelper.createFixedDepositProduct(fixedDepositProductJSON, requestSpec, responseSpec);
+    }
+    private Integer applyForFixedDepositApplication_10000(final String clientID, final String productID, final String submittedOnDate,
+                                                          final String penalInterestType, final Integer maturityInstructionId) {
+        log.info("--------------------------------APPLYING FOR FIXED DEPOSIT ACCOUNT --------------------------------");
+        final String fixedDepositApplicationJSON = new FixedDepositAccountHelper(this.requestSpec, this.responseSpec) //
+                .withSubmittedOnDate(submittedOnDate)
+                .withMaturityInstructionId(maturityInstructionId)
+                .withDepositAmount("10000")
+                .withDepositPeriod("3")
+                .withNumberOfDaysPerYear("360")
+                .minDepositTermTypeDays()
+                .withMinDepositTerm("1")
+                .maxDepositTermTypeDays()
+                .withMaxDepositTerm("360")
+                .withInterestCompoundingPeriodTypeAsNone()
+                .withPreClosurePenalApplicable(false)
+                .withOutInMultiplesOfDepositTerm()
+                .withOutInMultiplesOfDepositTermType()
+                .build(clientID, productID, penalInterestType);
+        return FixedDepositAccountHelper.applyFixedDepositApplicationGetId(fixedDepositApplicationJSON, this.requestSpec,
+                this.responseSpec);
     }
 
     private Integer applyForFixedDepositApplication(final String clientID, final String productID, final String submittedOnDate,

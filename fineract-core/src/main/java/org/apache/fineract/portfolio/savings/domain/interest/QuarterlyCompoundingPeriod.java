@@ -145,9 +145,11 @@ public final class QuarterlyCompoundingPeriod implements CompoundingPeriod {
                     interestOnBalanceUnrounded = balance.calculateInterestOnBalance(interestToCompound, interestRateAsFraction, daysInYear,
                             minBalanceForInterestCalculation, overdraftInterestRateAsFraction, minOverdraftForInterestCalculation);
                 break;
-                // case NO_COMPOUNDING_SIMPLE_INTEREST:
+                // case NONE:
                 // break;
                 case INVALID:
+                break;
+                default:
                 break;
             }
 
