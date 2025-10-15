@@ -25,15 +25,12 @@ import java.util.HashMap;
 import org.apache.fineract.client.models.PostTaxesComponentsRequest;
 import org.apache.fineract.client.models.PostTaxesComponentsResponse;
 import org.apache.fineract.client.util.Calls;
-import org.apache.fineract.integrationtests.common.accounting.Account;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public final class TaxComponentHelper {
 
-    private TaxComponentHelper() {
-
-    }
+    private TaxComponentHelper() {}
 
     private static final Logger LOG = LoggerFactory.getLogger(TaxComponentHelper.class);
     private static final String CREATE_TAX_COMPONENT_URL = "/fineract-provider/api/v1/taxes/component?" + Utils.TENANT_IDENTIFIER;
@@ -56,8 +53,8 @@ public final class TaxComponentHelper {
     public static String getTaxComponentAsJSON(final String percentage, final Integer creditAccountId) {
         final HashMap<String, String> map = getBasicTaxComponentMap(percentage);
         if (creditAccountId != null) {
-            map.put("creditAccountType", Account.AccountType.LIABILITY.toString());
-            map.put("creditAcountId", String.valueOf(creditAccountId));
+            map.put("creditAccountType", "2");
+            map.put("creditAccountId", String.valueOf(creditAccountId));
         }
         LOG.info("map :  {}", map);
         return new Gson().toJson(map);
@@ -80,5 +77,4 @@ public final class TaxComponentHelper {
     public static PostTaxesComponentsResponse createTaxComponent(PostTaxesComponentsRequest request) {
         return Calls.ok(FineractClientHelper.getFineractClient().taxComponents.createTaxComponent(request));
     }
-
 }

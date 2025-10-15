@@ -35,6 +35,7 @@ import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.domain.AbstractAuditableCustom;
 import org.apache.fineract.portfolio.tax.api.TaxApiConstants;
 import org.apache.fineract.portfolio.tax.exception.TaxMappingNotFoundException;
+import org.apache.fineract.useradministration.domain.AppUser;
 
 @Entity
 @Table(name = "m_tax_group")
@@ -60,7 +61,11 @@ public class TaxGroup extends AbstractAuditableCustom {
         return new TaxGroup(name, taxGroupMappings);
     }
 
-    public Map<String, Object> update(final JsonCommand command, final Set<TaxGroupMappings> taxGroupMappings) {
+    public Map<String, Object> update(final JsonCommand command, final Set<TaxGroupMappings> taxGroupMappings, AppUser createdBy) {
+        if (createdBy == null) {
+            throw new IllegalArgumentException("createdBy cannot be null");
+        }
+
         final Map<String, Object> changes = new HashMap<>();
 
         if (command.isChangeInStringParameterNamed(TaxApiConstants.nameParamName, this.name)) {
@@ -77,6 +82,8 @@ public class TaxGroup extends AbstractAuditableCustom {
             if (mappings == null) {
                 this.taxGroupMappings.add(groupMappings);
                 taxComponentList.add(groupMappings.getTaxComponent().getId());
+                groupMappings.setTaxGroup(this);
+                groupMappings.setCreatedBy(createdBy.getId());
             } else {
                 mappings.update(groupMappings.getEndDate(), modifications);
             }
