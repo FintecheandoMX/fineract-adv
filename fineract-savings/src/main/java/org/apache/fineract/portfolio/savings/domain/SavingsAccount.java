@@ -657,6 +657,17 @@ public class SavingsAccount extends AbstractAuditableWithUTCDateTimeCustom<Long>
         return withholdTransactions;
     }
 
+    protected List<SavingsAccountTransaction> findInterestPostedTransactions() {
+        final List<SavingsAccountTransaction> interestPostedTransactions = new ArrayList<>();
+        List<SavingsAccountTransaction> trans = getTransactions();
+        for (final SavingsAccountTransaction transaction : trans) {
+            if (transaction.isInterestPostingAndNotReversed()) {
+                interestPostedTransactions.add(transaction);
+            }
+        }
+        return interestPostedTransactions;
+    }
+
     protected List<SavingsAccountTransaction> findWithHoldSavingsTransactionsWithPivotConfig() {
         final List<SavingsAccountTransaction> withholdTransactions = new ArrayList<>();
         List<SavingsAccountTransaction> trans = getSavingsAccountTransactionsWithPivotConfig();
@@ -1345,7 +1356,7 @@ public class SavingsAccount extends AbstractAuditableWithUTCDateTimeCustom<Long>
                 }
 
                 if (charge.isEnablePaymentType() && charge.isEnableFreeWithdrawal()) { // discount transaction to
-                                                                                       // specific paymentType
+                    // specific paymentType
                     if (paymentDetail.getPaymentType().getName().equals(charge.getCharge().getPaymentType().getName())) {
                         resetFreeChargeDaysCount(charge, transactionAmount, transactionDate, refNo);
                     }
@@ -1356,8 +1367,8 @@ public class SavingsAccount extends AbstractAuditableWithUTCDateTimeCustom<Long>
                                 refNo);
                     }
                 } else if (!charge.isEnablePaymentType() && charge.isEnableFreeWithdrawal()) { // discount transaction
-                                                                                               // irrespective of
-                                                                                               // PaymentTypes.
+                    // irrespective of
+                    // PaymentTypes.
                     resetFreeChargeDaysCount(charge, transactionAmount, transactionDate, refNo);
 
                 } else { // normal-withdraw
@@ -3455,18 +3466,34 @@ public class SavingsAccount extends AbstractAuditableWithUTCDateTimeCustom<Long>
 
     protected boolean applyWithholdTaxForDepositAccounts(final LocalDate interestPostingUpToDate, boolean recalucateDailyBalance,
             final boolean backdatedTxnsAllowedTill) {
+        final SavingsCompoundingInterestPeriodType compoundingPeriodType = SavingsCompoundingInterestPeriodType
+                .fromInt(this.interestCompoundingPeriodType);
+
         final List<SavingsAccountTransaction> withholdTransactions = findWithHoldTransactions();
+        final List<SavingsAccountTransaction> interestPostedTransactions = findInterestPostedTransactions();
         SavingsAccountTransaction withholdTransaction = findTransactionFor(interestPostingUpToDate, withholdTransactions);
         final BigDecimal totalInterestPosted = this.savingsAccountTransactionSummaryWrapper.calculateTotalInterestPosted(this.currency,
                 this.transactions);
-        if (withholdTransaction == null && this.withHoldTax()) {
-            boolean isWithholdTaxAdded = createWithHoldTransaction(totalInterestPosted, interestPostingUpToDate, backdatedTxnsAllowedTill);
-            recalucateDailyBalance = recalucateDailyBalance || isWithholdTaxAdded;
-        } else {
-            boolean isWithholdTaxAdded = updateWithHoldTransaction(totalInterestPosted, withholdTransaction);
-            recalucateDailyBalance = recalucateDailyBalance || isWithholdTaxAdded;
-        }
 
+        if (SavingsCompoundingInterestPeriodType.NONE.equals(compoundingPeriodType)) {
+            if ((withholdTransactions == null || withholdTransactions.isEmpty()) && this.withHoldTax()) {
+                for (SavingsAccountTransaction interest : interestPostedTransactions) {
+                    boolean isWithholdTaxAdded = createWithHoldTransaction(interest.getAmount(), interest.getTransactionDate(),
+                            backdatedTxnsAllowedTill);
+                    recalucateDailyBalance = recalucateDailyBalance || isWithholdTaxAdded;
+                }
+            }
+            return recalucateDailyBalance;
+        } else {
+            if (withholdTransaction == null && this.withHoldTax()) {
+                boolean isWithholdTaxAdded = createWithHoldTransaction(totalInterestPosted, interestPostingUpToDate,
+                        backdatedTxnsAllowedTill);
+                recalucateDailyBalance = recalucateDailyBalance || isWithholdTaxAdded;
+            } else if (withholdTransaction != null && this.withHoldTax()) {
+                boolean isWithholdTaxAdded = updateWithHoldTransaction(totalInterestPosted, withholdTransaction);
+                recalucateDailyBalance = recalucateDailyBalance || isWithholdTaxAdded;
+            }
+        }
         return recalucateDailyBalance;
     }
 
