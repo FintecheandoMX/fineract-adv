@@ -424,6 +424,58 @@ public class SavingsInterestPostingTest {
         }
     }
 
+    @Test
+    public void testPostInterestForDuplicatePrevention() {
+        try {
+            final String amount = "10000";
+            // Simulate time passing - update business date to March
+            globalConfigurationHelper.updateGlobalConfiguration(GlobalConfigurationConstants.ENABLE_BUSINESS_DATE,
+                    new PutGlobalConfigurationsRequest().enabled(true));
+            LocalDate marchDate = LocalDate.of(2025, 3, 2);
+            BusinessDateHelper.updateBusinessDate(requestSpec, responseSpec, BusinessDateType.BUSINESS_DATE, marchDate);
+
+            final Account assetAccount = accountHelper.createAssetAccount();
+            final Account incomeAccount = accountHelper.createIncomeAccount();
+            final Account expenseAccount = accountHelper.createExpenseAccount();
+            final Account liabilityAccount = accountHelper.createLiabilityAccount();
+            final Account interestReceivableAccount = accountHelper.createAssetAccount("interestReceivableAccount");
+            final Account savingsControlAccount = accountHelper.createLiabilityAccount("Savings Control");
+            final Account interestPayableAccount = accountHelper.createLiabilityAccount("Interest Payable");
+
+            final Integer productId = createSavingsProductWithAccrualAccountingWithOutOverdraftAllowed(
+                    interestPayableAccount.getAccountID().toString(), savingsControlAccount.getAccountID().toString(),
+                    interestReceivableAccount.getAccountID().toString(), assetAccount, incomeAccount, expenseAccount, liabilityAccount);
+
+            final LocalDate startDate = LocalDate.of(2025, 2, 1);
+
+            List<Integer> accountIdList = new ArrayList<>();
+            for (int i = 0; i < 1500; i++) {
+
+                final Integer clientId = ClientHelper.createClient(requestSpec, responseSpec, "01 January 2025");
+                final String startDateString = DateTimeFormatter.ofPattern("dd MMMM yyyy", Locale.US).format(startDate);
+                final Integer accountId = savingsAccountHelper.applyForSavingsApplicationOnDate(clientId, productId,
+                        SavingsAccountHelper.ACCOUNT_TYPE_INDIVIDUAL, startDateString);
+
+                savingsAccountHelper.approveSavingsOnDate(accountId, startDateString);
+                savingsAccountHelper.activateSavings(accountId, startDateString);
+                savingsAccountHelper.depositToSavingsAccount(accountId, amount, startDateString, CommonConstants.RESPONSE_RESOURCE_ID);
+
+                accountIdList.add(accountId);
+            }
+
+            schedulerJobHelper.executeAndAwaitJob(POST_INTEREST_JOB_NAME);
+
+            for (Integer accountId : accountIdList) {
+                List<HashMap> txs = getInterestTransactions(accountId);
+                Assertions.assertEquals(1, txs.size(), "ERROR: Duplicate interest postings exist.");
+            }
+
+        } finally {
+            globalConfigurationHelper.updateGlobalConfiguration(GlobalConfigurationConstants.ENABLE_BUSINESS_DATE,
+                    new PutGlobalConfigurationsRequest().enabled(false));
+        }
+    }
+
     private List<HashMap> getInterestTransactions(Integer savingsAccountId) {
         List<HashMap> all = savingsAccountHelper.getSavingsTransactions(savingsAccountId);
         List<HashMap> filtered = new ArrayList<>();
