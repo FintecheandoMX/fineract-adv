@@ -31,6 +31,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.fineract.accounting.common.AccountingRuleType;
 import org.apache.fineract.accounting.glaccount.data.GLAccountData;
@@ -76,6 +77,7 @@ import org.apache.fineract.portfolio.savings.exception.SavingsAccountNotFoundExc
 import org.apache.fineract.portfolio.tax.data.TaxComponentData;
 import org.apache.fineract.portfolio.tax.data.TaxDetailsData;
 import org.apache.fineract.portfolio.tax.data.TaxGroupData;
+import org.apache.fineract.portfolio.tax.service.TaxReadPlatformService;
 import org.apache.fineract.useradministration.domain.AppUser;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -105,9 +107,12 @@ public class SavingsAccountReadPlatformServiceImpl implements SavingsAccountRead
 
     private final SavingsAccountRepositoryWrapper savingsAccountRepositoryWrapper;
 
+    private final TaxReadPlatformService readPlatformService;
+
     public SavingsAccountReadPlatformServiceImpl(final PlatformSecurityContext context, final JdbcTemplate jdbcTemplate,
             final SavingsAccountAssembler savingAccountAssembler, PaginationHelper paginationHelper, ColumnValidator columnValidator,
-            DatabaseSpecificSQLGenerator sqlGenerator, SavingsAccountRepositoryWrapper savingsAccountRepositoryWrapper) {
+            DatabaseSpecificSQLGenerator sqlGenerator, SavingsAccountRepositoryWrapper savingsAccountRepositoryWrapper,
+            TaxReadPlatformService readPlatformService) {
         this.context = context;
         this.jdbcTemplate = jdbcTemplate;
         this.sqlGenerator = sqlGenerator;
@@ -120,6 +125,7 @@ public class SavingsAccountReadPlatformServiceImpl implements SavingsAccountRead
         this.paginationHelper = paginationHelper;
         this.savingAccountMapperForInterestPosting = new SavingAccountMapperForInterestPosting();
         this.savingAccountAssembler = savingAccountAssembler;
+        this.readPlatformService = readPlatformService;
     }
 
     @Override
@@ -257,7 +263,7 @@ public class SavingsAccountReadPlatformServiceImpl implements SavingsAccountRead
         return savingsAccountDataList;
     }
 
-    private static final class SavingAccountMapperForInterestPosting implements ResultSetExtractor<List<SavingsAccountData>> {
+    private final class SavingAccountMapperForInterestPosting implements ResultSetExtractor<List<SavingsAccountData>> {
 
         private final String schemaSql;
 
@@ -385,6 +391,8 @@ public class SavingsAccountReadPlatformServiceImpl implements SavingsAccountRead
             SavingsAccountTransactionData savingsAccountTransactionData = null;
             SavingsAccountData savingsAccountData = null;
             int count = 0;
+
+            final Map<Long, TaxGroupData> taxGroupCache = new HashMap<>();
 
             while (rs.next()) {
                 final Long id = rs.getLong("id");
@@ -519,7 +527,8 @@ public class SavingsAccountReadPlatformServiceImpl implements SavingsAccountRead
                     final Long taxGroupId = JdbcSupport.getLongDefaultToNullIfZero(rs, "taxGroupId");
                     TaxGroupData taxGroupData = null;
                     if (taxGroupId != null) {
-                        taxGroupData = TaxGroupData.lookup(taxGroupId, null);
+                        taxGroupData = taxGroupCache.computeIfAbsent(taxGroupId,
+                                idKey -> readPlatformService.retrieveTaxGroupWithTemplate(idKey));
                     }
 
                     final BigDecimal nominalAnnualInterestRate = JdbcSupport.getBigDecimalDefaultToNullIfZero(rs,
