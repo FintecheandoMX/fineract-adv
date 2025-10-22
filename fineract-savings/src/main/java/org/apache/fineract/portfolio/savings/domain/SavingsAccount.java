@@ -3455,18 +3455,24 @@ public class SavingsAccount extends AbstractAuditableWithUTCDateTimeCustom<Long>
 
     protected boolean applyWithholdTaxForDepositAccounts(final LocalDate interestPostingUpToDate, boolean recalucateDailyBalance,
             final boolean backdatedTxnsAllowedTill) {
+        final SavingsCompoundingInterestPeriodType compoundingPeriodType = SavingsCompoundingInterestPeriodType
+                .fromInt(this.interestCompoundingPeriodType);
         final List<SavingsAccountTransaction> withholdTransactions = findWithHoldTransactions();
         SavingsAccountTransaction withholdTransaction = findTransactionFor(interestPostingUpToDate, withholdTransactions);
         final BigDecimal totalInterestPosted = this.savingsAccountTransactionSummaryWrapper.calculateTotalInterestPosted(this.currency,
                 this.transactions);
-        if (withholdTransaction == null && this.withHoldTax()) {
-            boolean isWithholdTaxAdded = createWithHoldTransaction(totalInterestPosted, interestPostingUpToDate, backdatedTxnsAllowedTill);
-            recalucateDailyBalance = recalucateDailyBalance || isWithholdTaxAdded;
-        } else if (withholdTransaction != null && this.withHoldTax()) {
-            boolean isWithholdTaxAdded = updateWithHoldTransaction(totalInterestPosted, withholdTransaction);
-            recalucateDailyBalance = recalucateDailyBalance || isWithholdTaxAdded;
+        if (SavingsCompoundingInterestPeriodType.NONE.equals(compoundingPeriodType)) {
+            return recalucateDailyBalance;
+        } else {
+            if (withholdTransaction == null && this.withHoldTax()) {
+                boolean isWithholdTaxAdded = createWithHoldTransaction(totalInterestPosted, interestPostingUpToDate,
+                        backdatedTxnsAllowedTill);
+                recalucateDailyBalance = recalucateDailyBalance || isWithholdTaxAdded;
+            } else if (withholdTransaction != null && this.withHoldTax()) {
+                boolean isWithholdTaxAdded = updateWithHoldTransaction(totalInterestPosted, withholdTransaction);
+                recalucateDailyBalance = recalucateDailyBalance || isWithholdTaxAdded;
+            }
         }
-
         return recalucateDailyBalance;
     }
 
