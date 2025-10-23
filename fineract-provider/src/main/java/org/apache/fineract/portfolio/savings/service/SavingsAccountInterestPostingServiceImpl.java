@@ -647,7 +647,11 @@ public class SavingsAccountInterestPostingServiceImpl implements SavingsAccountI
     }
 
     private boolean isWithHoldTaxApplicableForInterestPosting(final SavingsAccountData savingsAccountData) {
-        return this.withHoldTax(savingsAccountData) && this.depositAccountType(savingsAccountData).isSavingsDeposit();
+        if (!this.withHoldTax(savingsAccountData)) {
+            return false;
+        }
+        final DepositAccountType accountType = this.depositAccountType(savingsAccountData);
+        return accountType.isSavingsDeposit() || accountType.isFixedDeposit() || accountType.isRecurringDeposit();
     }
 
     private boolean withHoldTax(final SavingsAccountData savingsAccountData) {

@@ -1356,7 +1356,7 @@ public class SavingsAccount extends AbstractAuditableWithUTCDateTimeCustom<Long>
                 }
 
                 if (charge.isEnablePaymentType() && charge.isEnableFreeWithdrawal()) { // discount transaction to
-                                                                                       // specific paymentType
+                    // specific paymentType
                     if (paymentDetail.getPaymentType().getName().equals(charge.getCharge().getPaymentType().getName())) {
                         resetFreeChargeDaysCount(charge, transactionAmount, transactionDate, refNo);
                     }
@@ -1367,8 +1367,8 @@ public class SavingsAccount extends AbstractAuditableWithUTCDateTimeCustom<Long>
                                 refNo);
                     }
                 } else if (!charge.isEnablePaymentType() && charge.isEnableFreeWithdrawal()) { // discount transaction
-                                                                                               // irrespective of
-                                                                                               // PaymentTypes.
+                    // irrespective of
+                    // PaymentTypes.
                     resetFreeChargeDaysCount(charge, transactionAmount, transactionDate, refNo);
 
                 } else { // normal-withdraw
