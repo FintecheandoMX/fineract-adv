@@ -657,6 +657,17 @@ public class SavingsAccount extends AbstractAuditableWithUTCDateTimeCustom<Long>
         return withholdTransactions;
     }
 
+    protected List<SavingsAccountTransaction> findInterestPostedTransactions() {
+        final List<SavingsAccountTransaction> interestPostedTransactions = new ArrayList<>();
+        List<SavingsAccountTransaction> trans = getTransactions();
+        for (final SavingsAccountTransaction transaction : trans) {
+            if (transaction.isInterestPostingAndNotReversed()) {
+                interestPostedTransactions.add(transaction);
+            }
+        }
+        return interestPostedTransactions;
+    }
+
     protected List<SavingsAccountTransaction> findWithHoldSavingsTransactionsWithPivotConfig() {
         final List<SavingsAccountTransaction> withholdTransactions = new ArrayList<>();
         List<SavingsAccountTransaction> trans = getSavingsAccountTransactionsWithPivotConfig();
@@ -3457,11 +3468,21 @@ public class SavingsAccount extends AbstractAuditableWithUTCDateTimeCustom<Long>
             final boolean backdatedTxnsAllowedTill) {
         final SavingsCompoundingInterestPeriodType compoundingPeriodType = SavingsCompoundingInterestPeriodType
                 .fromInt(this.interestCompoundingPeriodType);
+
         final List<SavingsAccountTransaction> withholdTransactions = findWithHoldTransactions();
+        final List<SavingsAccountTransaction> interestPostedTransactions = findInterestPostedTransactions();
         SavingsAccountTransaction withholdTransaction = findTransactionFor(interestPostingUpToDate, withholdTransactions);
         final BigDecimal totalInterestPosted = this.savingsAccountTransactionSummaryWrapper.calculateTotalInterestPosted(this.currency,
                 this.transactions);
+
         if (SavingsCompoundingInterestPeriodType.NONE.equals(compoundingPeriodType)) {
+            if ((withholdTransactions == null || withholdTransactions.isEmpty()) && this.withHoldTax()) {
+                for (SavingsAccountTransaction interest : interestPostedTransactions) {
+                    boolean isWithholdTaxAdded = createWithHoldTransaction(interest.getAmount(), interest.getTransactionDate(),
+                            backdatedTxnsAllowedTill);
+                    recalucateDailyBalance = recalucateDailyBalance || isWithholdTaxAdded;
+                }
+            }
             return recalucateDailyBalance;
         } else {
             if (withholdTransaction == null && this.withHoldTax()) {
