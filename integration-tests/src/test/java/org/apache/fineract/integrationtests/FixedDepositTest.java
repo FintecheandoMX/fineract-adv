@@ -19,6 +19,7 @@
 package org.apache.fineract.integrationtests;
 
 import static java.time.temporal.ChronoUnit.DAYS;
+import static org.apache.fineract.integrationtests.common.BusinessDateHelper.runAt;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -2947,6 +2948,124 @@ public class FixedDepositTest extends IntegrationTest {
         final Integer taxComponentId = TaxComponentHelper.createTaxComponent(this.requestSpec, this.responseSpec, percentage,
                 liabilityAccountId);
         return TaxGroupHelper.createTaxGroup(this.requestSpec, this.responseSpec, Arrays.asList(taxComponentId));
+    }
+
+    @Test
+    public void testFixedDepositPostInterestWithHoldTax() {
+        this.fixedDepositProductHelper = new FixedDepositProductHelper(this.requestSpec, this.responseSpec);
+        this.accountHelper = new AccountHelper(this.requestSpec, this.responseSpec);
+        this.savingsAccountHelper = new SavingsAccountHelper(this.requestSpec, this.responseSpec);
+        this.fixedDepositAccountHelper = new FixedDepositAccountHelper(this.requestSpec, this.responseSpec);
+
+        // === Dates ONLY using LocalDate and Utils ===
+        LocalDate tenantDate = Utils.getLocalDateOfTenant();
+        LocalDate closedOnDate = tenantDate;
+
+        // We want interest posting in AUG, SEP and OCT of the tenant's year (equivalent to RD deposits)
+        LocalDate octDepositDate = closedOnDate.withDayOfMonth(1); // 01 OCT
+        LocalDate sepDepositDate = octDepositDate.minusMonths(1); // 01 SEP
+        LocalDate augDepositDate = octDepositDate.minusMonths(2); // 01 AUG
+
+        // To allow backdated posting, activate the account in AUGUST
+        LocalDate activationDate = augDepositDate;
+
+        // --- Guardrail against "future date" (tolerance: today-1) ---
+        LocalDate today = tenantDate;
+        LocalDate serverGuardDate = today.minusDays(1);
+        LocalDate safeOctDate = octDepositDate.isAfter(serverGuardDate) ? serverGuardDate : octDepositDate;
+        LocalDate safeClosedOnDate = closedOnDate.isAfter(serverGuardDate) ? serverGuardDate : closedOnDate;
+
+        // Formatted dates
+        final String VALID_FROM = Utils.dateFormatter.format(activationDate.minusMonths(2));
+        final String VALID_TO = Utils.dateFormatter.format(tenantDate.plusYears(10));
+        final String SUBMITTED_ON_DATE = Utils.dateFormatter.format(activationDate);
+        final String APPROVED_ON_DATE = SUBMITTED_ON_DATE;
+        final String ACTIVATION_DATE = SUBMITTED_ON_DATE;
+        final String CLOSED_ON_DATE = Utils.dateFormatter.format(safeClosedOnDate);
+
+        // End-of-month cutoffs to post interest for AUG and SEP; then move to 01 OCT (or guard)
+        int year = activationDate.getYear();
+        LocalDate endOfAug = LocalDate.of(year, 8, 1).withDayOfMonth(LocalDate.of(year, 8, 1).lengthOfMonth());
+        LocalDate endOfSep = LocalDate.of(year, 9, 1).withDayOfMonth(LocalDate.of(year, 9, 1).lengthOfMonth());
+        final String POST_AUG_DATE = Utils.dateFormatter.format(endOfAug);
+        final String POST_SEP_DATE = Utils.dateFormatter.format(endOfSep);
+        final String RUN_OCT_DATE = Utils.dateFormatter.format(safeOctDate);
+
+        // === Ledger accounts ===
+        final Account assetAccount = this.accountHelper.createAssetAccount();
+        final Account incomeAccount = this.accountHelper.createIncomeAccount();
+        final Account expenseAccount = this.accountHelper.createExpenseAccount();
+        final Account liabilityAccount = this.accountHelper.createLiabilityAccount();
+        final Account liabilityAccountForTax = this.accountHelper.createLiabilityAccount();
+
+        // === Client ===
+        Integer clientId = ClientHelper.createClient(this.requestSpec, this.responseSpec);
+        Assertions.assertNotNull(clientId);
+
+        // === FD product with Withhold Tax (cash-based) ===
+        final String accountingRule = CASH_BASED;
+        final Integer taxGroupId = createTaxGroup("10", liabilityAccountForTax);
+        String fdProductJson = new FixedDepositProductHelper(this.requestSpec, this.responseSpec)
+                .withAccountingRuleAsCashBased(new Account[] { assetAccount, liabilityAccount, expenseAccount, incomeAccount })
+                .withWithHoldTax(String.valueOf(taxGroupId)).withPeriodRangeChart().build(VALID_FROM, VALID_TO);
+        Integer fixedDepositProductId = FixedDepositProductHelper.createFixedDepositProduct(fdProductJson, this.requestSpec,
+                this.responseSpec);
+        Assertions.assertNotNull(fixedDepositProductId);
+
+        // === Apply FD (single deposit as expected for FD). PenalInterestType: WHOLE_TERM ===
+        String fdApplicationJson = new FixedDepositAccountHelper(this.requestSpec, this.responseSpec).withSubmittedOnDate(SUBMITTED_ON_DATE)
+                .build(clientId.toString(), fixedDepositProductId.toString(), WHOLE_TERM);
+        Integer fixedDepositAccountId = FixedDepositAccountHelper.applyFixedDepositApplicationGetId(fdApplicationJson, this.requestSpec,
+                this.responseSpec);
+        Assertions.assertNotNull(fixedDepositAccountId);
+
+        // === Approve and Activate in AUGUST ===
+        HashMap status = this.fixedDepositAccountHelper.approveFixedDeposit(fixedDepositAccountId, APPROVED_ON_DATE);
+        Assertions.assertNotNull(status);
+        status = this.fixedDepositAccountHelper.activateFixedDeposit(fixedDepositAccountId, ACTIVATION_DATE);
+        Assertions.assertNotNull(status);
+
+        // === Post interest at end of AUGUST
+        runAt(POST_AUG_DATE, () -> {
+            Integer calcAug = this.fixedDepositAccountHelper.calculateInterestForFixedDeposit(fixedDepositAccountId);
+            Assertions.assertNotNull(calcAug);
+            Integer postAug = this.fixedDepositAccountHelper.postInterestForFixedDeposit(fixedDepositAccountId);
+            Assertions.assertNotNull(postAug);
+        });
+
+        // === Post interest at end of SEPTEMBER
+        runAt(POST_SEP_DATE, () -> {
+            Integer calcSep = this.fixedDepositAccountHelper.calculateInterestForFixedDeposit(fixedDepositAccountId);
+            Assertions.assertNotNull(calcSep);
+            Integer postSep = this.fixedDepositAccountHelper.postInterestForFixedDeposit(fixedDepositAccountId);
+            Assertions.assertNotNull(postSep);
+        });
+
+        // === Run at 01 OCT (or guard) to consolidate state if needed
+        runAt(RUN_OCT_DATE, () -> {
+            Integer calcOct = this.fixedDepositAccountHelper.calculateInterestForFixedDeposit(fixedDepositAccountId);
+            Assertions.assertNotNull(calcOct);
+            Integer postOct = this.fixedDepositAccountHelper.postInterestForFixedDeposit(fixedDepositAccountId);
+            Assertions.assertNotNull(postOct);
+        });
+
+        // === Premature closure on safe date (avoid “future date”)
+        runAt(CLOSED_ON_DATE, () -> {
+            Integer prematureClosureTxnId = (Integer) this.fixedDepositAccountHelper.prematureCloseForFixedDeposit(fixedDepositAccountId,
+                    CLOSED_ON_DATE, CLOSURE_TYPE_WITHDRAW_DEPOSIT, null, CommonConstants.RESPONSE_RESOURCE_ID);
+            Assertions.assertNotNull(prematureClosureTxnId);
+        });
+
+        // === Verify Withhold Tax > 0 in summary
+        HashMap fdData = FixedDepositAccountHelper.getFixedDepositAccountById(this.requestSpec, this.responseSpec, fixedDepositAccountId);
+        Assertions.assertNotNull(fdData, "Failed to retrieve FD account by ID.");
+        @SuppressWarnings("unchecked")
+        HashMap summary = (HashMap) fdData.get("summary");
+        Assertions.assertNotNull(summary, "FD account summary not found.");
+        Object taxObj = summary.get("totalWithholdTax");
+        Assertions.assertNotNull(taxObj, "Withhold tax (totalWithholdTax) was not calculated.");
+        Float withHoldTax = (taxObj instanceof Number) ? ((Number) taxObj).floatValue() : Float.valueOf(String.valueOf(taxObj));
+        Assertions.assertTrue(withHoldTax > 0.0f, "Withhold tax must be greater than zero.");
     }
 
     /**

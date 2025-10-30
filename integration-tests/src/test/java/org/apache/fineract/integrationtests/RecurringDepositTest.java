@@ -3103,6 +3103,117 @@ public class RecurringDepositTest {
         return TaxGroupHelper.createTaxGroup(this.requestSpec, this.responseSpec, Arrays.asList(taxComponentId));
     }
 
+    @Test
+    public void testRecurringDepositPostInterestWithHoldTax() {
+        this.recurringDepositProductHelper = new RecurringDepositProductHelper(this.requestSpec, this.responseSpec);
+        this.accountHelper = new AccountHelper(this.requestSpec, this.responseSpec);
+        this.savingsAccountHelper = new SavingsAccountHelper(this.requestSpec, this.responseSpec);
+        this.recurringDepositAccountHelper = new RecurringDepositAccountHelper(this.requestSpec, this.responseSpec);
+
+        // === Dates ONLY using LocalDate and Utils ===
+        LocalDate tenantDate = Utils.getLocalDateOfTenant();
+        LocalDate closedOnDate = tenantDate;
+
+        // We want deposits in AUG, SEP and OCT of the tenant's year
+        LocalDate octDepositDate = closedOnDate.withDayOfMonth(1); // 01 OCT
+        LocalDate sepDepositDate = octDepositDate.minusMonths(1); // 01 SEP
+        LocalDate augDepositDate = octDepositDate.minusMonths(2); // 01 AUG
+
+        // To allow backdated deposits, activate the account in AUGUST
+        LocalDate activationDate = augDepositDate;
+
+        // --- Guardrail against "future date" (tolerant to drift: at most today-1) ---
+        LocalDate today = tenantDate;
+        LocalDate serverGuardDate = today.minusDays(1);
+        LocalDate safeOctDepositDate = octDepositDate.isAfter(serverGuardDate) ? serverGuardDate : octDepositDate;
+        LocalDate safeClosedOnDate = closedOnDate.isAfter(serverGuardDate) ? serverGuardDate : closedOnDate;
+
+        final String VALID_FROM = Utils.dateFormatter.format(activationDate.minusMonths(2));
+        final String VALID_TO = Utils.dateFormatter.format(tenantDate.plusYears(10));
+        final String SUBMITTED_ON_DATE = Utils.dateFormatter.format(activationDate);
+        final String APPROVED_ON_DATE = SUBMITTED_ON_DATE;
+        final String ACTIVATION_DATE = SUBMITTED_ON_DATE;
+        final String expectedFirstDepositOnDate = SUBMITTED_ON_DATE;
+        final String CLOSED_ON_DATE = Utils.dateFormatter.format(safeClosedOnDate);
+
+        // === Ledger accounts ===
+        final Account assetAccount = this.accountHelper.createAssetAccount();
+        final Account incomeAccount = this.accountHelper.createIncomeAccount();
+        final Account expenseAccount = this.accountHelper.createExpenseAccount();
+        final Account liabilityAccount = this.accountHelper.createLiabilityAccount();
+        final Account liabilityAccountForTax = this.accountHelper.createLiabilityAccount();
+
+        // === Client ===
+        Integer clientId = ClientHelper.createClient(this.requestSpec, this.responseSpec);
+        Assertions.assertNotNull(clientId);
+
+        // === Product with Withhold Tax ===
+        final String accountingRule = CASH_BASED;
+        final Integer taxGroupId = createTaxGroup("10", liabilityAccountForTax);
+        Integer recurringDepositProductId = createRecurringDepositProductWithWithHoldTax(VALID_FROM, VALID_TO, String.valueOf(taxGroupId),
+                accountingRule, assetAccount, liabilityAccount, incomeAccount, expenseAccount);
+        Assertions.assertNotNull(recurringDepositProductId);
+
+        // === Apply / Approve / Activate ===
+        Integer recurringDepositAccountId = applyForRecurringDepositApplication(clientId.toString(), recurringDepositProductId.toString(),
+                VALID_FROM, VALID_TO, SUBMITTED_ON_DATE, WHOLE_TERM, expectedFirstDepositOnDate);
+        Assertions.assertNotNull(recurringDepositAccountId);
+
+        HashMap status = RecurringDepositAccountStatusChecker.getStatusOfRecurringDepositAccount(this.requestSpec, this.responseSpec,
+                recurringDepositAccountId.toString());
+        RecurringDepositAccountStatusChecker.verifyRecurringDepositIsPending(status);
+
+        status = this.recurringDepositAccountHelper.approveRecurringDeposit(recurringDepositAccountId, APPROVED_ON_DATE);
+        RecurringDepositAccountStatusChecker.verifyRecurringDepositIsApproved(status);
+
+        status = this.recurringDepositAccountHelper.activateRecurringDeposit(recurringDepositAccountId, ACTIVATION_DATE);
+        RecurringDepositAccountStatusChecker.verifyRecurringDepositIsActive(status);
+
+        // === Get deposit amount ===
+        HashMap accountData = RecurringDepositAccountHelper.getRecurringDepositAccountById(this.requestSpec, this.responseSpec,
+                recurringDepositAccountId);
+        Object depObj = accountData.get("mandatoryRecommendedDepositAmount");
+        Assertions.assertNotNull(depObj, "mandatoryRecommendedDepositAmount was not found on the RD account.");
+        Float depositAmount = (depObj instanceof Number) ? ((Number) depObj).floatValue() : Float.valueOf(String.valueOf(depObj));
+
+        // === Three deposits: AUG, SEP, OCT ===
+        final String AUG_DATE = Utils.dateFormatter.format(augDepositDate);
+        final String SEP_DATE = Utils.dateFormatter.format(sepDepositDate);
+        final String OCT_DATE = Utils.dateFormatter.format(safeOctDepositDate);
+
+        Integer depAug = this.recurringDepositAccountHelper.depositToRecurringDepositAccount(recurringDepositAccountId, depositAmount,
+                AUG_DATE);
+        Assertions.assertNotNull(depAug, "August deposit not created");
+
+        Integer depSep = this.recurringDepositAccountHelper.depositToRecurringDepositAccount(recurringDepositAccountId, depositAmount,
+                SEP_DATE);
+        Assertions.assertNotNull(depSep, "September deposit not created");
+
+        Integer depOct = this.recurringDepositAccountHelper.depositToRecurringDepositAccount(recurringDepositAccountId, depositAmount,
+                OCT_DATE);
+        Assertions.assertNotNull(depOct, "October deposit not created");
+
+        // === Calculate and post interest (engine will generate the lines per period) ===
+        this.recurringDepositAccountHelper.calculateInterestForRecurringDeposit(recurringDepositAccountId);
+        Integer interestTxnId = this.recurringDepositAccountHelper.postInterestForRecurringDeposit(recurringDepositAccountId);
+        Assertions.assertNotNull(interestTxnId);
+
+        // === Closure (today - 1-day tolerance) ===
+        Integer prematureClosureTxnId = (Integer) this.recurringDepositAccountHelper.prematureCloseForRecurringDeposit(
+                recurringDepositAccountId, CLOSED_ON_DATE, CLOSURE_TYPE_WITHDRAW_DEPOSIT, null, CommonConstants.RESPONSE_RESOURCE_ID);
+        Assertions.assertNotNull(prematureClosureTxnId);
+
+        // === Verify Withhold Tax > 0 ===
+        accountData = RecurringDepositAccountHelper.getRecurringDepositAccountById(this.requestSpec, this.responseSpec,
+                recurringDepositAccountId);
+        HashMap summary = (HashMap) accountData.get("summary");
+        Assertions.assertNotNull(summary, "RD account summary was not found.");
+        Object taxObj = summary.get("totalWithholdTax");
+        Assertions.assertNotNull(taxObj, "Withholding tax was not calculated.");
+        Float withHoldTax = (taxObj instanceof Number) ? ((Number) taxObj).floatValue() : Float.valueOf(String.valueOf(taxObj));
+        Assertions.assertTrue(withHoldTax > 0, "Tax should be greater than zero.");
+    }
+
     /**
      * Delete the Liability transfer account
      */
